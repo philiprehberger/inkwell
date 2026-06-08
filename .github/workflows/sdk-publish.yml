@@ -1,0 +1,85 @@
+name: SDK Publish
+
+# Tag-triggered: a tag named sdk-{lang}-v{version} publishes one SDK.
+# Examples:
+#   sdk-typescript-v0.3.0   -> npm
+#   sdk-php-v0.3.0          -> Packagist (auto from GitHub webhook; nothing to push here)
+#   sdk-python-v0.3.0       -> PyPI
+#   sdk-go-v0.3.0           -> Go module proxy picks it up automatically once the tag exists
+#
+# Secrets required (set in repo settings):
+#   NPM_TOKEN     — npm automation token with publish rights to @philiprehberger
+#   PYPI_TOKEN    — PyPI project-scoped API token
+#
+# To bump and publish:
+#   1. Update versions in openapitools.json + sdks/*/package.json|composer.json|pyproject.toml
+#   2. npx @openapitools/openapi-generator-cli generate-all && commit
+#   3. git tag sdk-typescript-v0.3.1 && git push --tags
+
+on:
+  push:
+    tags:
+      - "sdk-typescript-v*"
+      - "sdk-python-v*"
+      - "sdk-php-v*"
+      - "sdk-go-v*"
+
+jobs:
+  typescript:
+    if: startsWith(github.ref, 'refs/tags/sdk-typescript-v')
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sdks/typescript
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          registry-url: https://registry.npmjs.org
+      - run: npm install
+      - run: npm test
+      - run: npm run build
+      - run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  python:
+    if: startsWith(github.ref, 'refs/tags/sdk-python-v')
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sdks/python
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: |
+          python -m pip install --upgrade pip build twine
+          python -m build
+          python -m twine upload dist/*
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
+
+  php:
+    if: startsWith(github.ref, 'refs/tags/sdk-php-v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Note
+        # Packagist auto-pulls from GitHub on tag push once the repo is registered
+        # at https://packagist.org/packages/philiprehberger/webhook-relay-client.
+        # No CI action required beyond the tag itself.
+        run: echo "Packagist will pick up this tag via its GitHub webhook."
+
+  go:
+    if: startsWith(github.ref, 'refs/tags/sdk-go-v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Note
+        # The Go module proxy (proxy.golang.org) caches modules by tag.
+        # Once this tag exists on GitHub, `go get` will see the new version.
+        run: echo "Go proxy picks up this tag automatically."

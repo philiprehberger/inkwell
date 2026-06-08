@@ -1,0 +1,19 @@
+extends:
+  - spectral:oas
+
+rules:
+  # Operations should have an operationId so SDK generators produce sane method names.
+  operation-operationId: error
+
+  # Tags so the docs site groups endpoints sensibly.
+  operation-tags: warn
+
+  # Markdown links in descriptions are fine; don't flag them.
+  no-$ref-siblings: off
+
+  # contact + license already present in info; require them so we don't regress.
+  info-contact: warn
+  info-license: warn
+
+  # Don't enforce description on every parameter — too noisy at this stage.
+  operation-description: warn

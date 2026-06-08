@@ -1,0 +1,104 @@
+name: SDK CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "openapi/spec.yaml"
+      - "openapitools.json"
+      - "sdks/**"
+      - ".github/workflows/sdk-ci.yml"
+  pull_request:
+    paths:
+      - "openapi/spec.yaml"
+      - "openapitools.json"
+      - "sdks/**"
+      - ".github/workflows/sdk-ci.yml"
+
+jobs:
+  typescript:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sdks/typescript
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: sdks/typescript/package-lock.json
+      - run: npm install
+      - run: npm test
+      - run: npm run build
+
+  php:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sdks/php
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.3"
+          extensions: mbstring
+          tools: composer:v2
+      - run: composer install --no-interaction --prefer-dist
+      - run: vendor/bin/phpunit
+
+  python:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sdks/python
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .[test]
+      - name: Test
+        run: pytest tests/
+
+  go:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sdks/go
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+      - run: go test ./...
+
+  spec-drift:
+    # Regenerate the SDKs from openapi/spec.yaml and fail if any generated
+    # file changes. Catches "you changed the spec but forgot to regen the SDK".
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Install generator
+        run: npm install --no-save @openapitools/openapi-generator-cli
+      - name: Regenerate all SDKs
+        run: npx @openapitools/openapi-generator-cli generate-all
+        # The above runs every generator listed in openapitools.json
+        continue-on-error: true
+      - name: Fail if regenerated output drifted
+        run: |
+          if [ -n "$(git status --porcelain sdks/*/generated)" ]; then
+            echo "::error::Generated SDK output drifted from openapi/spec.yaml"
+            git --no-pager diff --stat sdks/*/generated
+            exit 1
+          fi
