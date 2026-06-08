@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\ApiKeysController;
 use App\Http\Controllers\Api\AuditController;
+use App\Http\Controllers\Api\DataSubjectController;
 use App\Http\Controllers\Api\DestinationsController;
 use App\Http\Controllers\Api\FormsController;
 use App\Http\Controllers\Api\HealthController;
@@ -60,5 +61,12 @@ Route::prefix('v1')->group(function () {
 
         // Audit
         Route::get('audit', AuditController::class)->name('v1.audit.index');
+
+        // Compliance — data-subject access + erasure. Admin-scope only.
+        Route::middleware(['api.key:admin'])->group(function () {
+            Route::post('data-subjects/lookup', [DataSubjectController::class, 'lookup'])->name('v1.data-subjects.lookup');
+            Route::middleware(['idempotency'])->delete('data-subjects/by-email', [DataSubjectController::class, 'delete'])->name('v1.data-subjects.delete');
+            Route::get('data-subjects/requests/{id}', [DataSubjectController::class, 'status'])->name('v1.data-subjects.status');
+        });
     });
 });

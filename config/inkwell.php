@@ -42,6 +42,9 @@ return [
         App\Services\Destinations\WebhookDestination::class,
         App\Services\Destinations\SlackDestination::class,
         App\Services\Destinations\DiscordDestination::class,
+        App\Services\Destinations\GoogleSheetsDestination::class,
+        App\Services\Destinations\HubSpotDestination::class,
+        App\Services\Destinations\MailchimpDestination::class,
     ],
 
 ];
