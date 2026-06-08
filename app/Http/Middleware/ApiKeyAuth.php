@@ -4,13 +4,17 @@ namespace App\Http\Middleware;
 
 use App\Http\Responses\ProblemResponse;
 use App\Models\ApiKey;
+use App\Models\Scopes\WorkspaceScope;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
 class ApiKeyAuth
 {
-    public function handle(Request $request, Closure $next): Response
+    /**
+     * @param  array<string>  $scopes  required scopes for the route (optional).
+     */
+    public function handle(Request $request, Closure $next, ...$scopes): Response
     {
         $token = $this->extractBearer($request);
 
@@ -18,7 +22,7 @@ class ApiKeyAuth
             return new ProblemResponse(
                 status: 401,
                 title: 'Authentication required',
-                detail: 'Provide an Authorization: Bearer whk_live_... or whk_test_... header.',
+                detail: 'Provide an Authorization: Bearer inkwell_live_... or inkwell_test_... header.',
             );
         }
 
@@ -32,11 +36,21 @@ class ApiKeyAuth
             );
         }
 
-        // Attach the resolved key + workspace so controllers can read them.
-        $request->attributes->set('api_key', $apiKey);
-        $request->attributes->set('workspace', $apiKey->workspace);
+        if ($scopes !== []) {
+            $missing = array_filter($scopes, fn ($s) => ! $apiKey->hasScope($s));
+            if ($missing !== []) {
+                return new ProblemResponse(
+                    status: 403,
+                    title: 'Forbidden',
+                    detail: 'This endpoint requires scope: '.implode(', ', $missing),
+                );
+            }
+        }
 
-        // Fire-and-forget update — inline for now, queue when Horizon lands.
+        $workspace = $apiKey->workspace()->withoutGlobalScope(WorkspaceScope::class)->first();
+        $request->attributes->set('api_key', $apiKey);
+        $request->attributes->set('workspace', $workspace);
+
         $apiKey->forceFill(['last_used_at' => now()])->saveQuietly();
 
         return $next($request);

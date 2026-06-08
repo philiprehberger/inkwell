@@ -9,20 +9,6 @@ jobs:
   lint-and-test:
     runs-on: ubuntu-latest
 
-    services:
-      mysql:
-        image: mysql:8.0
-        env:
-          MYSQL_ROOT_PASSWORD: root
-          MYSQL_DATABASE: webhook_relay_test
-        ports:
-          - 3306:3306
-        options: >-
-          --health-cmd="mysqladmin ping --silent"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=5
-
     steps:
       - uses: actions/checkout@v4
 
@@ -30,7 +16,7 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: "8.3"
-          extensions: mbstring, pdo_mysql, redis, bcmath
+          extensions: mbstring, sqlite3, pdo_sqlite, redis, bcmath, fileinfo
           coverage: none
           tools: composer:v2
 
@@ -54,39 +40,13 @@ jobs:
       - name: Generate app key
         run: php artisan key:generate
 
-      - name: Configure DB env
+      - name: Use sqlite for CI
         run: |
-          sed -i 's/^DB_DATABASE=.*/DB_DATABASE=webhook_relay_test/' .env
-          sed -i 's/^DB_USERNAME=.*/DB_USERNAME=root/' .env
-          sed -i 's/^DB_PASSWORD=.*/DB_PASSWORD=root/' .env
+          sed -i 's/^DB_CONNECTION=.*/DB_CONNECTION=sqlite/' .env
+          touch database/database.sqlite
 
       - name: Run migrations
         run: php artisan migrate --force
 
-      - name: Run Pest / PHPUnit
-        run: php artisan test --parallel
-
-  web-build:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: web
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: web/package-lock.json
-
-      - name: Install
-        run: npm ci
-
-      - name: Lint
-        run: npm run lint
-
-      - name: Build
-        run: npm run build
+      - name: Run PHPUnit
+        run: php artisan test

@@ -10,16 +10,12 @@ use Illuminate\Support\Facades\RateLimiter;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * Per-workspace token bucket. Sits after ApiKeyAuth so the workspace is
- * already attached to the request. Emits X-RateLimit-* headers on every
- * response and returns 429 problem+json on overage.
- *
- * Default: 100 requests per minute per workspace. Override per-workspace
- * later via a column on the workspaces table when tenancy ships.
+ * Per-workspace management API rate limit. Sits after ApiKeyAuth so the
+ * workspace is already attached.
  */
 class WorkspaceRateLimit
 {
-    private const DEFAULT_PER_MINUTE = 100;
+    private const DEFAULT_PER_MINUTE = 600;
     private const DECAY_SECONDS = 60;
 
     public function handle(Request $request, Closure $next): Response
@@ -36,13 +32,11 @@ class WorkspaceRateLimit
 
         if (RateLimiter::tooManyAttempts($key, $limit)) {
             $retryAfter = RateLimiter::availableIn($key);
-
             $response = new ProblemResponse(
                 status: 429,
                 title: 'Too many requests',
                 detail: "Workspace rate limit of {$limit} requests per minute exceeded.",
             );
-
             return $this->withHeaders($response, $limit, 0, now()->addSeconds($retryAfter)->timestamp);
         }
 
@@ -61,7 +55,6 @@ class WorkspaceRateLimit
         $response->headers->set('X-RateLimit-Limit', (string) $limit);
         $response->headers->set('X-RateLimit-Remaining', (string) $remaining);
         $response->headers->set('X-RateLimit-Reset', (string) $resetAt);
-
         return $response;
     }
 }

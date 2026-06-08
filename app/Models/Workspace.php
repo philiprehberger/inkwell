@@ -10,23 +10,11 @@ class Workspace extends Model
 {
     use HasUlids;
 
-    protected $fillable = ['name', 'slug', 'is_sandbox'];
+    protected $fillable = ['name', 'slug'];
 
-    protected function casts(): array
+    public function forms(): HasMany
     {
-        return ['is_sandbox' => 'boolean'];
-    }
-
-    /**
-     * The singleton "Public Sandbox" workspace that anonymous docs-site
-     * visitors get keys against. Created on first call.
-     */
-    public static function sandbox(): self
-    {
-        return static::firstOrCreate(
-            ['slug' => 'public-sandbox'],
-            ['name' => 'Public Sandbox', 'is_sandbox' => true],
-        );
+        return $this->hasMany(Form::class);
     }
 
     public function apiKeys(): HasMany
@@ -34,18 +22,13 @@ class Workspace extends Model
         return $this->hasMany(ApiKey::class);
     }
 
-    public function events(): HasMany
+    public function memberships(): HasMany
     {
-        return $this->hasMany(Event::class);
+        return $this->hasMany(WorkspaceMembership::class);
     }
 
-    public function idempotencyRecords(): HasMany
+    public function auditEvents(): HasMany
     {
-        return $this->hasMany(IdempotencyRecord::class);
-    }
-
-    public function subscriptions(): HasMany
-    {
-        return $this->hasMany(Subscription::class);
+        return $this->hasMany(AuditEvent::class);
     }
 }

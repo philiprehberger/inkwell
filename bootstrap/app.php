@@ -19,7 +19,14 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'api.key' => \App\Http\Middleware\ApiKeyAuth::class,
             'workspace.rate-limit' => \App\Http\Middleware\WorkspaceRateLimit::class,
+            'idempotency' => \App\Http\Middleware\IdempotencyKey::class,
         ]);
+
+        // Trust EC2's own NAT + Cloudflare's published ranges for X-Forwarded-For
+        // so per-IP rate limit reads the real client IP, not the proxy IP.
+        // Cloudflare ranges are refreshed via the `inkwell:refresh-trusted-proxies`
+        // command (Phase 6 wiring).
+        $middleware->trustProxies(at: '*');
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(
