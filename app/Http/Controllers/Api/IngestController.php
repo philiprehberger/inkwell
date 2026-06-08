@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\DispatchDestinationsJob;
 use App\Models\Form;
 use App\Models\Scopes\WorkspaceScope;
 use App\Models\Submission;
@@ -133,7 +134,11 @@ class IngestController extends Controller
             $finalState = $original?->state ?? $finalState;
         }
 
-        // Phase 4 will dispatch destination fan-out for CLEAN / PROMOTED submissions here.
+        // Destination fan-out — for CLEAN submissions only. Spam / quarantined
+        // submissions wait for buyer's promote action; rejected store no PII.
+        if ($finalState === Submission::STATE_CLEAN) {
+            DispatchDestinationsJob::dispatch($finalId);
+        }
 
         if ($this->wantsJson($request)) {
             return response()->json([

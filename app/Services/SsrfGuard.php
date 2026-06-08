@@ -15,6 +15,18 @@ class SsrfGuard
     /**
      * @return string|null  Null if allowed; an error code string if blocked.
      */
+    /**
+     * Convenience static helper used by WebhookDestination etc.
+     * Throws an InvalidArgumentException on block.
+     */
+    public static function assertSafeUrl(string $url): void
+    {
+        $error = (new self)->check($url);
+        if ($error !== null) {
+            throw new \InvalidArgumentException("SSRF guard: {$error}");
+        }
+    }
+
     public function check(string $url): ?string
     {
         $parsed = parse_url($url);

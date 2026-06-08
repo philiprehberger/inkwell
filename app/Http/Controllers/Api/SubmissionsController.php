@@ -94,7 +94,8 @@ class SubmissionsController extends Controller
             'previous_state' => $previous,
         ], request: $request);
 
-        // Destination dispatch lands in Phase 4. For now record the intent.
+        \App\Jobs\DispatchDestinationsJob::dispatch($submission->id);
+
         return response()->json($this->serializeDetail($submission->fresh(['deliveries.destination', 'files'])));
     }
 

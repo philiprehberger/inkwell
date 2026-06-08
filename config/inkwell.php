@@ -26,4 +26,22 @@ return [
         App\Services\Spam\Signals\CaptchaSignal::class,
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Destination registry
+    |--------------------------------------------------------------------------
+    |
+    | Each class implements App\Services\Destinations\Destination. Adding
+    | destination #N: implement the interface, register here, add the kind
+    | constant on FormDestination, write a smoke test.
+    |
+    */
+
+    'destinations' => [
+        App\Services\Destinations\EmailDestination::class,
+        App\Services\Destinations\WebhookDestination::class,
+        App\Services\Destinations\SlackDestination::class,
+        App\Services\Destinations\DiscordDestination::class,
+    ],
+
 ];
