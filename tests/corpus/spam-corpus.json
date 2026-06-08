@@ -1,0 +1,23 @@
+{
+  "version": "1",
+  "description": "Inkwell spam-scoring corpus. Each case fixes a payload + form + context shape and asserts the score falls in a range. Range-based assertions are tolerant to weight tuning; the corpus catches regressions when a signal flips polarity (e.g. an operator change inverts the all-caps ratio direction). Add a row before changing signal weights.",
+  "cases": [
+    { "name": "clean contact-us submission", "payload": {"name": "Alice", "email": "alice@example.com", "message": "Hi — I wanted to follow up on our chat last week. Could we schedule a call?"}, "raw": {}, "expected_state": "clean", "score_min": 0, "score_max": 5 },
+    { "name": "clean RSVP yes", "payload": {"name": "Bob", "email": "bob@example.com", "attending": "yes"}, "raw": {}, "expected_state": "clean", "score_min": 0, "score_max": 5 },
+    { "name": "clean lead-gen with phone", "payload": {"name": "Carol", "email": "carol@example.com", "phone": "555-123-4567", "interest": "Pricing"}, "raw": {}, "expected_state": "clean", "score_min": 0, "score_max": 5 },
+    { "name": "clean short body just over min length", "payload": {"name": "Dan", "email": "dan@example.com", "message": "Got it."}, "raw": {}, "expected_state": "clean", "score_min": 0, "score_max": 5 },
+    { "name": "clean multilingual greeting", "payload": {"name": "Eve", "email": "eve@example.de", "message": "Hallo — wir interessieren uns für Ihre Dienstleistungen."}, "raw": {}, "expected_state": "clean", "score_min": 0, "score_max": 5 },
+    { "name": "clean technical question with one URL", "payload": {"name": "Frank", "email": "frank@example.com", "message": "I'm getting a 500 on https://example.com/api/widgets — repro is in the linked notion."}, "raw": {}, "expected_state": "clean", "score_min": 0, "score_max": 5 },
+    { "name": "clean long thoughtful message", "payload": {"name": "Grace", "email": "grace@example.org", "message": "Thanks for the demo earlier this week. I had a few questions about how the rule engine handles segment cycles — does the depth limit kick in before the visitor sees a 500, or do you short-circuit at evaluation time?"}, "raw": {}, "expected_state": "clean", "score_min": 0, "score_max": 5 },
+    { "name": "honeypot filled — hard block", "payload": {"name": "Spam", "email": "spam@example.com", "message": "Free Money"}, "raw": {"_subject_honeypot": "any value at all"}, "expected_state": "rejected", "score_min": 100, "score_max": 100 },
+    { "name": "honeypot filled with whitespace only — still cleared by trim", "payload": {"name": "Spam", "email": "spam@example.com", "message": "Free Money"}, "raw": {"_subject_honeypot": "   "}, "expected_state": "clean", "score_min": 0, "score_max": 5 },
+    { "name": "disposable email", "payload": {"name": "Bot", "email": "test@10minutemail.com", "message": "Casino bonus today."}, "raw": {}, "expected_state": "clean", "score_min": 8, "score_max": 25 },
+    { "name": "many URLs", "payload": {"name": "Linker", "email": "linker@example.com", "message": "Visit https://a.com https://b.com https://c.com https://d.com for deals."}, "raw": {}, "expected_state": "clean", "score_min": 5, "score_max": 25 },
+    { "name": "all caps shouting", "payload": {"name": "Loud", "email": "loud@example.com", "message": "BUY NOW LIMITED TIME OFFER ACT FAST OR MISS OUT"}, "raw": {}, "expected_state": "clean", "score_min": 0, "score_max": 20 },
+    { "name": "URLs + disposable email combo", "payload": {"name": "Combo", "email": "combo@mailinator.com", "message": "BUY https://x.com https://y.com https://z.com NOW"}, "raw": {}, "expected_state": "clean", "score_min": 15, "score_max": 25 },
+    { "name": "URLs + disposable + bad email syntax + short", "payload": {"name": "X", "email": "not-an-email@10minutemail.com", "message": "spam"}, "raw": {}, "expected_state": "clean", "score_min": 5, "score_max": 20 },
+    { "name": "syntactically invalid email", "payload": {"name": "Bad", "email": "not-an-email", "message": "hello there friend"}, "raw": {}, "expected_state": "clean", "score_min": 10, "score_max": 25 },
+    { "name": "many phone numbers", "payload": {"name": "Spam", "email": "spam@example.com", "message": "Call now: 555-111-2222, 555-333-4444, 555-555-6666, 555-777-8888"}, "raw": {}, "expected_state": "clean", "score_min": 0, "score_max": 15 },
+    { "name": "very short body", "payload": {"name": "X", "email": "x@example.com", "message": "hi"}, "raw": {}, "expected_state": "clean", "score_min": 0, "score_max": 10 }
+  ]
+}

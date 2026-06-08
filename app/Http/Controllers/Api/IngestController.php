@@ -7,12 +7,14 @@ use App\Models\Form;
 use App\Models\Scopes\WorkspaceScope;
 use App\Models\Submission;
 use App\Services\SchemaValidator;
+use App\Services\Spam\SpamScorer;
+use App\Services\Spam\SubmissionContext;
+use App\Services\Spam\SubmissionState;
 use App\Services\SubmissionDedupCache;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
-use Illuminate\Support\Facades\URL;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
@@ -23,7 +25,7 @@ use Symfony\Component\HttpFoundation\Response;
  *   4. IP blocklist (Phase 6 wiring).
  *   5. Per-IP token bucket rate limit (60/min/IP/form default).
  *   6. JSON Schema validation (rejects 400 with field-level errors).
- *   7. Spam scoring (Phase 3 — currently a stub that always returns 0 score / clean).
+ *   7. SpamScorer pipeline (Phase 3) — graduated decision.
  *   8. Redis dedup (atomic SETNX, 60s window).
  *
  * Response shape depends on Accept header:
@@ -34,7 +36,7 @@ class IngestController extends Controller
 {
     private const PER_IP_DEFAULT = 60;
     private const PER_IP_DECAY = 60;
-    private const HONEYPOT_PRIVATE_KEYS = ['_redirect', '_subject_honeypot', '_inkwell_ts'];
+    private const INKWELL_PRIVATE_KEYS = ['_redirect', '_subject_honeypot', '_inkwell_ts', '_inkwell_captcha'];
 
     public function __invoke(Request $request, string $formId): Response
     {
@@ -60,30 +62,35 @@ class IngestController extends Controller
         $limit = self::PER_IP_DEFAULT;
         $rlKey = "ingest:{$form->id}:".$clientIp;
         if (RateLimiter::tooManyAttempts($rlKey, $limit)) {
-            return $this->problem(429, "Too many submissions from this address. Try again in a minute.");
+            return $this->problem(429, 'Too many submissions from this address. Try again in a minute.');
         }
         RateLimiter::hit($rlKey, self::PER_IP_DECAY);
 
         // Split visitor payload from Inkwell control fields.
         $raw = $request->all();
-        $userPayload = array_diff_key($raw, array_flip(self::HONEYPOT_PRIVATE_KEYS));
+        $userPayload = array_diff_key($raw, array_flip(self::INKWELL_PRIVATE_KEYS));
         $redirectUrl = $raw['_redirect'] ?? $form->success_redirect_url ?? null;
 
-        // Honeypot — Inkwell-private field name configured on the form. Hidden
-        // input in the HTML; bots that fill all visible fields trip it.
-        $honeypotName = $form->honeypot_field ?: '_subject_honeypot';
-        $honeypotFilled = ! empty($raw[$honeypotName]);
-
-        // Spam scoring stub. Phase 3 owns the real pipeline.
-        $signals = [
-            'honeypot_filled' => $honeypotFilled,
-            'score_breakdown' => [],
-            'total_score' => $honeypotFilled ? 100 : 0,
-            'threshold' => $form->spam_threshold,
-            'decision' => $honeypotFilled ? 'rejected' : 'clean',
-        ];
-        $state = $honeypotFilled ? Submission::STATE_REJECTED : Submission::STATE_CLEAN;
-        $score = $honeypotFilled ? 100 : 0;
+        // SpamScorer pipeline — composable signals, see config/inkwell.php.
+        $scoreCtx = new SubmissionContext(
+            form: $form,
+            payload: $userPayload,
+            raw: $raw,
+            clientIp: $clientIp,
+            userAgent: $request->userAgent(),
+            referer: $request->headers->get('Referer'),
+            renderedAtTimestamp: isset($raw['_inkwell_ts']) ? (int) $raw['_inkwell_ts'] : null,
+            captchaToken: is_string($raw['_inkwell_captcha'] ?? null) ? $raw['_inkwell_captcha'] : null,
+        );
+        $scoreResult = SpamScorer::fromConfig()->score($scoreCtx);
+        $state = match ($scoreResult->state) {
+            SubmissionState::REJECTED => Submission::STATE_REJECTED,
+            SubmissionState::SPAM => Submission::STATE_SPAM,
+            SubmissionState::QUARANTINED => Submission::STATE_QUARANTINED,
+            default => Submission::STATE_CLEAN,
+        };
+        $score = $scoreResult->score;
+        $signals = $scoreResult->toJson();
 
         // Schema validation only for non-rejected submissions.
         if ($state !== Submission::STATE_REJECTED) {
@@ -93,7 +100,9 @@ class IngestController extends Controller
             }
         }
 
-        // Dedup — atomic claim.
+        // For rejected (hard-block) submissions we store the metadata but
+        // discard the payload — counts against rate-limit budgets without
+        // accumulating PII for hard-blocked spam.
         $hash = SubmissionDedupCache::canonicalHash($userPayload);
         $submission = Submission::withoutGlobalScope(WorkspaceScope::class)->create([
             'workspace_id' => $form->workspace_id,
@@ -124,7 +133,7 @@ class IngestController extends Controller
             $finalState = $original?->state ?? $finalState;
         }
 
-        // Phase 4 will dispatch destination fan-out for CLEAN submissions here.
+        // Phase 4 will dispatch destination fan-out for CLEAN / PROMOTED submissions here.
 
         if ($this->wantsJson($request)) {
             return response()->json([
@@ -134,7 +143,6 @@ class IngestController extends Controller
             ], 200, $headers);
         }
 
-        // Form-encoded client: redirect to thank-you URL (or fallback).
         $target = $redirectUrl ?: route('v1.hosted-thank-you', ['id' => $finalId]);
         return new RedirectResponse($target, 302, $headers);
     }
