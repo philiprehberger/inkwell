@@ -1,0 +1,850 @@
+openapi: 3.1.0
+info:
+  title: Inkwell API
+  version: 0.1.0
+  summary: Form submission / inbound API with spam scoring and multi-destination fan-out.
+  description: |
+    Inkwell accepts form POSTs from any HTML page, filters spam transparently,
+    and fans out clean submissions to a configurable list of destinations —
+    email, webhook, Slack, Discord, Google Sheets, HubSpot, Mailchimp.
+
+    The submission endpoint is **unauthenticated by design** — the integration
+    is a plain HTML `<form action="…">`. Spam scoring + rate limit + IP
+    blocklist + explicit CORS allowlist are the defence layers.
+
+    This spec is the source of truth. Controllers conform to it; CI runs
+    Spectral lint + multi-fixture contract tests.
+  contact:
+    name: Philip Rehberger
+    url: https://inkwell.philiprehberger.com
+  license:
+    name: MIT
+    identifier: MIT
+
+servers:
+  - url: https://api.inkwell.philiprehberger.com
+    description: Production
+  - url: http://localhost:8000
+    description: Local development
+
+security:
+  - ApiKeyAuth: []
+
+tags:
+  - name: Health
+    description: Liveness check.
+  - name: Submissions
+    description: The submission endpoint (public, unauthenticated). Submission management (authenticated).
+  - name: Forms
+    description: Form definitions and per-form schema.
+  - name: Destinations
+    description: Per-form notification destinations — email / webhook / Slack / Discord / Sheets / HubSpot / Mailchimp.
+  - name: API Keys
+    description: Workspace management API keys.
+  - name: Audit
+    description: Read-only mutation history.
+  - name: Compliance
+    description: Data-subject access + erasure endpoints (admin-only).
+
+paths:
+  /v1/healthz:
+    get:
+      summary: Liveness check
+      description: Returns 200 if the API is up. Does not require auth.
+      operationId: healthz
+      tags: [Health]
+      security: []
+      responses:
+        "200":
+          description: Service is up.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+
+  /v1/forms/{id}/submit:
+    post:
+      summary: Submit a form
+      description: |
+        **Public, unauthenticated.** Accepts `application/x-www-form-urlencoded`,
+        `multipart/form-data`, and `application/json`. Body is validated against
+        the form's JSON Schema. Spam scoring runs synchronously; destinations are
+        dispatched asynchronously via Horizon for `clean` submissions.
+
+        Response shape depends on `Accept` header. Form posts get a 302 redirect
+        to `_redirect` (or the form's `success_redirect_url`, or the hosted
+        thank-you page). JSON posts get a JSON body with the submission ID + state.
+
+        Duplicate submissions within a 60-second window (same form, same
+        canonical-payload hash) return 200 with the original submission ID and
+        `X-Inkwell-Duplicate: 1`.
+      operationId: submitForm
+      tags: [Submissions]
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              additionalProperties: true
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: true
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: Submission accepted (JSON-accepting client).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubmissionAck"
+        "302":
+          description: Submission accepted (form-encoded client). Redirect to thank-you URL.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          description: Origin not in form's CORS allowlist, or IP / country blocklisted.
+        "410":
+          description: Form is archived and no longer accepting submissions.
+        "413":
+          description: Body or file exceeded size limit.
+        "415":
+          description: File MIME type not allowed by form's `allowed_mime_types`.
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /v1/forms:
+    get:
+      summary: List forms
+      operationId: listForms
+      tags: [Forms]
+      responses:
+        "200":
+          description: Page of forms.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FormList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      summary: Create a form
+      operationId: createForm
+      tags: [Forms]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FormInput"
+      responses:
+        "201":
+          description: Form created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Form"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/IdempotencyConflict"
+
+  /v1/forms/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      summary: Retrieve a form
+      operationId: getForm
+      tags: [Forms]
+      responses:
+        "200":
+          description: The form.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Form"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      summary: Update a form
+      operationId: updateForm
+      tags: [Forms]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FormInput"
+      responses:
+        "200":
+          description: The updated form.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Form"
+    delete:
+      summary: Archive a form
+      description: Soft-delete; subsequent submissions return 410 Gone.
+      operationId: archiveForm
+      tags: [Forms]
+      responses:
+        "204":
+          description: Archived.
+
+  /v1/forms/{id}/submissions:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      summary: List submissions for a form
+      operationId: listSubmissions
+      tags: [Submissions]
+      parameters:
+        - in: query
+          name: state
+          schema:
+            type: string
+            enum: [pending, clean, spam, quarantined, promoted, rejected, archived]
+        - in: query
+          name: cursor
+          schema:
+            type: string
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 25
+      responses:
+        "200":
+          description: Page of submissions.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubmissionList"
+
+  /v1/submissions/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      summary: Retrieve a submission with signal breakdown + delivery log
+      operationId: getSubmission
+      tags: [Submissions]
+      responses:
+        "200":
+          description: The submission detail.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubmissionDetail"
+
+  /v1/submissions/{id}/promote:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+      - $ref: "#/components/parameters/IdempotencyKey"
+    post:
+      summary: Promote a quarantined or spam submission to clean
+      description: Re-triggers destination fan-out for the promoted submission.
+      operationId: promoteSubmission
+      tags: [Submissions]
+      responses:
+        "200":
+          description: Promoted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubmissionDetail"
+
+  /v1/submissions/{id}/replay-deliveries:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+      - $ref: "#/components/parameters/IdempotencyKey"
+    post:
+      summary: Manually replay failed destinations
+      description: Rate-limited to 10/min per workspace.
+      operationId: replayDeliveries
+      tags: [Submissions]
+      responses:
+        "200":
+          description: Replay queued.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubmissionDetail"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /v1/forms/{id}/destinations:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      summary: List a form's destinations
+      operationId: listDestinations
+      tags: [Destinations]
+      responses:
+        "200":
+          description: Destinations.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DestinationList"
+    post:
+      summary: Add a destination to a form
+      operationId: createDestination
+      tags: [Destinations]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DestinationInput"
+      responses:
+        "201":
+          description: Destination created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Destination"
+
+  /v1/destinations/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    patch:
+      summary: Update a destination
+      operationId: updateDestination
+      tags: [Destinations]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DestinationInput"
+      responses:
+        "200":
+          description: Updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Destination"
+    delete:
+      summary: Delete a destination
+      operationId: deleteDestination
+      tags: [Destinations]
+      responses:
+        "204":
+          description: Deleted.
+
+  /v1/destinations/{id}/test:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      summary: Fire a synthetic submission at a destination
+      operationId: testDestination
+      tags: [Destinations]
+      responses:
+        "200":
+          description: Test attempted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeliveryAttempt"
+
+  /v1/destinations/{id}/rotate-secret:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      summary: Rotate the HMAC signing secret on a webhook destination
+      description: 48-hour grace window — old + new both accepted.
+      operationId: rotateDestinationSecret
+      tags: [Destinations]
+      responses:
+        "200":
+          description: New secret (shown once).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  secret: { type: string }
+                  grace_expires_at: { type: string, format: date-time }
+                required: [secret, grace_expires_at]
+
+  /v1/api-keys:
+    get:
+      summary: List API keys
+      operationId: listApiKeys
+      tags: [API Keys]
+      responses:
+        "200":
+          description: Page of API keys.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiKeyList"
+    post:
+      summary: Mint an API key
+      operationId: createApiKey
+      tags: [API Keys]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApiKeyInput"
+      responses:
+        "201":
+          description: API key minted (plaintext shown once).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiKeyMinted"
+
+  /v1/api-keys/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    delete:
+      summary: Revoke an API key
+      operationId: revokeApiKey
+      tags: [API Keys]
+      responses:
+        "204":
+          description: Revoked.
+
+  /v1/audit:
+    get:
+      summary: List audit events
+      operationId: listAuditEvents
+      tags: [Audit]
+      responses:
+        "200":
+          description: Page of audit events.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditEventList"
+
+  /v1/data-subjects/lookup:
+    post:
+      summary: Subject-access request — find every submission containing this email
+      description: Admin-only. Returns submission IDs + form references, not full payloads.
+      operationId: lookupDataSubject
+      tags: [Compliance]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email: { type: string, format: email }
+              required: [email]
+      responses:
+        "200":
+          description: Submissions containing the email.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataSubjectLookupResult"
+
+  /v1/data-subjects/by-email:
+    delete:
+      summary: Right-to-erasure — queue PII deletion for every submission containing this email
+      description: Admin-only. Async PurgeDataSubjectJob cascades through submissions / files / deliveries / audit-redaction.
+      operationId: deleteDataSubject
+      tags: [Compliance]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email: { type: string, format: email }
+                reason: { type: string, minLength: 1 }
+              required: [email, reason]
+      responses:
+        "202":
+          description: Deletion request queued.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataSubjectRequest"
+
+  /v1/data-subjects/requests/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      summary: Status of a queued deletion request
+      operationId: getDataSubjectRequest
+      tags: [Compliance]
+      responses:
+        "200":
+          description: The request.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataSubjectRequest"
+
+components:
+  parameters:
+    Id:
+      in: path
+      name: id
+      required: true
+      schema:
+        type: string
+        pattern: "^[0-9A-HJKMNP-TV-Z]{26}$"
+      description: ULID.
+    IdempotencyKey:
+      in: header
+      name: Idempotency-Key
+      required: false
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+      description: |
+        Same key + same body within 24h replays the cached response.
+        Same key + different body returns 422 `idempotency_key_conflict`.
+
+  securitySchemes:
+    ApiKeyAuth:
+      type: http
+      scheme: bearer
+      description: "`inkwell_live_…` or `inkwell_test_…`. Argon2-hashed at rest."
+
+  responses:
+    BadRequest:
+      description: Validation error.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    Unauthorized:
+      description: Missing or invalid API key.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    Forbidden:
+      description: API key lacks the required scope.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    NotFound:
+      description: Resource not found.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    Conflict:
+      description: Resource conflict (duplicate slug, etc.).
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    IdempotencyConflict:
+      description: Idempotency-Key reused with a different body.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    TooManyRequests:
+      description: Rate limit exceeded.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+
+  schemas:
+    Problem:
+      type: object
+      properties:
+        type: { type: string, format: uri }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string }
+        errors:
+          type: object
+          additionalProperties:
+            type: array
+            items: { type: string }
+      required: [title, status]
+
+    Health:
+      type: object
+      properties:
+        status: { type: string, enum: [healthy] }
+        version: { type: string }
+      required: [status, version]
+
+    Form:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        slug: { type: string }
+        schema: { type: object, additionalProperties: true }
+        spam_threshold: { type: integer, minimum: 0, maximum: 100 }
+        success_redirect_url: { type: string, format: uri, nullable: true }
+        cors_origins:
+          type: array
+          items: { type: string }
+        accept_any_origin: { type: boolean }
+        archived_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+      required: [id, name, slug, schema, spam_threshold, cors_origins, accept_any_origin]
+
+    FormInput:
+      type: object
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        slug:
+          type: string
+          minLength: 1
+          maxLength: 80
+          pattern: "^[a-z0-9][a-z0-9_-]*$"
+        schema: { type: object, additionalProperties: true }
+        spam_threshold: { type: integer, minimum: 0, maximum: 100, default: 50 }
+        success_redirect_url: { type: string, format: uri, nullable: true }
+        cors_origins:
+          type: array
+          items: { type: string }
+        accept_any_origin: { type: boolean, default: false }
+      required: [name, slug, schema]
+
+    FormList:
+      type: object
+      properties:
+        data:
+          type: array
+          items: { $ref: "#/components/schemas/Form" }
+        next_cursor: { type: string, nullable: true }
+      required: [data]
+
+    SubmissionAck:
+      type: object
+      properties:
+        id: { type: string }
+        state: { type: string, enum: [pending, clean, spam, quarantined, rejected] }
+        redirect_url: { type: string, format: uri, nullable: true }
+      required: [id, state]
+
+    Submission:
+      type: object
+      properties:
+        id: { type: string }
+        form_id: { type: string }
+        state:
+          type: string
+          enum: [pending, clean, spam, quarantined, promoted, rejected, archived]
+        spam_score: { type: integer }
+        created_at: { type: string, format: date-time }
+        pii_purged_at: { type: string, format: date-time, nullable: true }
+      required: [id, form_id, state, created_at]
+
+    SubmissionList:
+      type: object
+      properties:
+        data:
+          type: array
+          items: { $ref: "#/components/schemas/Submission" }
+        next_cursor: { type: string, nullable: true }
+      required: [data]
+
+    SubmissionDetail:
+      allOf:
+        - $ref: "#/components/schemas/Submission"
+        - type: object
+          properties:
+            payload: { type: object, additionalProperties: true }
+            meta:
+              type: object
+              properties:
+                user_agent: { type: string, nullable: true }
+                referer: { type: string, nullable: true }
+                country: { type: string, nullable: true }
+                client_ip: { type: string, nullable: true }
+            spam_signals:
+              type: object
+              additionalProperties: true
+            deliveries:
+              type: array
+              items: { $ref: "#/components/schemas/Delivery" }
+
+    Destination:
+      type: object
+      properties:
+        id: { type: string }
+        form_id: { type: string }
+        kind:
+          type: string
+          enum: [email, webhook, slack, discord, google_sheets, hubspot, mailchimp]
+        config: { type: object, additionalProperties: true }
+        enabled: { type: boolean }
+        priority: { type: integer }
+        health: { type: string, enum: [healthy, degraded, failed], nullable: true }
+        last_attempted_at: { type: string, format: date-time, nullable: true }
+      required: [id, form_id, kind, config, enabled]
+
+    DestinationInput:
+      type: object
+      properties:
+        kind:
+          type: string
+          enum: [email, webhook, slack, discord, google_sheets, hubspot, mailchimp]
+        config: { type: object, additionalProperties: true }
+        enabled: { type: boolean, default: true }
+        priority: { type: integer, default: 0 }
+      required: [kind, config]
+
+    DestinationList:
+      type: object
+      properties:
+        data:
+          type: array
+          items: { $ref: "#/components/schemas/Destination" }
+      required: [data]
+
+    Delivery:
+      type: object
+      properties:
+        id: { type: string }
+        submission_id: { type: string }
+        destination_id: { type: string }
+        state: { type: string, enum: [pending, sent, failed, dead] }
+        attempts: { type: integer }
+        final_status_code: { type: integer, nullable: true }
+        last_attempted_at: { type: string, format: date-time, nullable: true }
+      required: [id, submission_id, destination_id, state, attempts]
+
+    DeliveryAttempt:
+      type: object
+      properties:
+        attempt_number: { type: integer }
+        request_summary: { type: string }
+        response_status: { type: integer, nullable: true }
+        response_body_snippet: { type: string, nullable: true }
+        latency_ms: { type: integer, nullable: true }
+        error_code: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+      required: [attempt_number, created_at]
+
+    ApiKey:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string, nullable: true }
+        prefix: { type: string }
+        last_four: { type: string }
+        scopes:
+          type: array
+          items: { type: string }
+        last_used_at: { type: string, format: date-time, nullable: true }
+        revoked_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+      required: [id, prefix, last_four, scopes]
+
+    ApiKeyInput:
+      type: object
+      properties:
+        name: { type: string, maxLength: 100 }
+        scopes:
+          type: array
+          items: { type: string, enum: [forms.read, forms.write, submissions.read, submissions.write, destinations.write, admin] }
+      required: [scopes]
+
+    ApiKeyMinted:
+      allOf:
+        - $ref: "#/components/schemas/ApiKey"
+        - type: object
+          properties:
+            secret: { type: string }
+          required: [secret]
+
+    ApiKeyList:
+      type: object
+      properties:
+        data:
+          type: array
+          items: { $ref: "#/components/schemas/ApiKey" }
+      required: [data]
+
+    AuditEvent:
+      type: object
+      properties:
+        id: { type: string }
+        actor_type: { type: string, enum: [user, api_key, system] }
+        actor_id: { type: string, nullable: true }
+        actor_label: { type: string }
+        subject_type: { type: string }
+        subject_id: { type: string }
+        action: { type: string }
+        diff: { type: object, additionalProperties: true }
+        reason: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+      required: [id, actor_type, subject_type, subject_id, action, created_at]
+
+    AuditEventList:
+      type: object
+      properties:
+        data:
+          type: array
+          items: { $ref: "#/components/schemas/AuditEvent" }
+        next_cursor: { type: string, nullable: true }
+      required: [data]
+
+    DataSubjectLookupResult:
+      type: object
+      properties:
+        email: { type: string }
+        submissions:
+          type: array
+          items:
+            type: object
+            properties:
+              submission_id: { type: string }
+              form_id: { type: string }
+              form_name: { type: string }
+              created_at: { type: string, format: date-time }
+              state: { type: string }
+            required: [submission_id, form_id, form_name, created_at, state]
+        count: { type: integer }
+      required: [email, submissions, count]
+
+    DataSubjectRequest:
+      type: object
+      properties:
+        id: { type: string }
+        email_hash: { type: string }
+        reason: { type: string }
+        state: { type: string, enum: [queued, in_progress, completed, failed] }
+        submissions_purged: { type: integer }
+        created_at: { type: string, format: date-time }
+        completed_at: { type: string, format: date-time, nullable: true }
+      required: [id, email_hash, state, created_at]
