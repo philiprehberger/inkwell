@@ -2,6 +2,7 @@ import './globals.css';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import SiteHeader from '@/components/SiteHeader';
+import GoogleAnalytics from '@/components/analytics/GoogleAnalytics';
 
 export const metadata = {
   title: 'Inkwell — form submission API with explainable spam scoring',
@@ -29,6 +30,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             </div>
           </div>
         </footer>
+        <GoogleAnalytics />
       </body>
     </html>
   );
