@@ -767,6 +767,16 @@ async function deploy(options = {}) {
         await switchToRelease(ssh, releasePath);
 
         // ==== RELOAD SERVICES ====
+        // OPcache caches `bootstrap/cache/config.php` per worker. A reload
+        // (SIGUSR2) doesn't reliably invalidate it on this host — workers keep
+        // serving the prior release's config. `restart` is the only thing that
+        // guarantees the new symlink target's config is read. Apache reload
+        // picks up the new DocumentRoot resolution but the Laravel app is
+        // served by php-fpm, so the FPM restart is the load-bearing step.
+        log('♻️', ' Restarting php-fpm to invalidate OPcache...');
+        await execSSH(ssh, 'sudo systemctl restart php8.3-fpm');
+        log('✅', 'php-fpm restarted');
+
         log('♻️', ' Reloading Apache...');
         await execSSH(ssh, 'sudo systemctl reload apache2');
         log('✅', 'Apache reloaded');
@@ -985,6 +995,11 @@ async function clearCachedConfigs() {
         await execSSH(ssh, `cd ${currentPath} && php artisan config:cache`);
         await execSSH(ssh, `cd ${currentPath} && php artisan route:cache`);
         await execSSH(ssh, `cd ${currentPath} && php artisan view:cache`);
+
+        // Restart php-fpm so OPcache picks up the new bootstrap/cache/config.php
+        // — reload doesn't reliably invalidate cached config classes on this host.
+        log('♻️', ' Restarting php-fpm...');
+        await execSSH(ssh, 'sudo systemctl restart php8.3-fpm');
 
         // Reload Apache
         log('♻️', ' Reloading Apache...');
