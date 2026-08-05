@@ -7,7 +7,7 @@ use App\Models\Submission;
 use App\Services\Destinations\WebhookDestination;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Date;
-use ReflectionMethod;
+use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 /**
@@ -50,6 +50,40 @@ class GoldenDeliveryTest extends TestCase
 
         $golden = json_decode(file_get_contents(base_path("tests/goldens/{$name}.json")), true);
 
+        $captured = null;
+        Http::fake(function ($request) use (&$captured) {
+            $captured = $request;
+
+            return Http::response(['ok' => true], 200);
+        });
+
+        // Exercise the REAL delivery path. An earlier version of this test
+        // rebuilt the body by hand and called sign() through reflection, which
+        // would have passed even if deliver() were broken — the opposite of
+        // what a regression oracle is for.
+        (new WebhookDestination)->deliver($this->submission(), $this->destination($rotating));
+
+        $this->assertNotNull($captured, 'no request was transmitted');
+        $this->assertSame($golden['body'], $captured->body(), 'delivery body drifted from the golden');
+
+        foreach ($golden['headers'] as $header => $expected) {
+            $this->assertSame(
+                $expected,
+                $captured->header($header)[0] ?? null,
+                "header [{$header}] drifted from the golden",
+            );
+        }
+
+        if (! $rotating) {
+            $this->assertEmpty(
+                $captured->header('X-Inkwell-Signature-Old'),
+                'a non-rotating destination must not emit a rotation header',
+            );
+        }
+    }
+
+    private function submission(): Submission
+    {
         $submission = new Submission;
         $submission->id = '01JGOLDEN0SUBMISSION000001';
         $submission->form_id = '01JGOLDEN0FORM000000000001';
@@ -63,35 +97,25 @@ class GoldenDeliveryTest extends TestCase
         $submission->meta = ['ip' => '203.0.113.10', 'user_agent' => 'golden/1.0'];
         $submission->created_at = CarbonImmutable::parse(self::FROZEN_TIME);
 
-        $body = json_encode([
-            'id' => $submission->id,
-            'form_id' => $submission->form_id,
-            'state' => $submission->state,
-            'spam_score' => $submission->spam_score,
-            'payload' => $submission->payload,
-            'meta' => $submission->meta,
-            'created_at' => $submission->created_at?->toIso8601String(),
-        ], JSON_UNESCAPED_SLASHES);
+        return $submission;
+    }
 
-        $this->assertSame($golden['body'], $body, 'delivery body drifted from the golden');
-
-        $timestamp = CarbonImmutable::parse(self::FROZEN_TIME)->getTimestamp();
-        $sign = new ReflectionMethod(WebhookDestination::class, 'sign');
-        $sign->setAccessible(true);
-        $instance = new WebhookDestination;
-
-        $this->assertSame(
-            $golden['headers']['X-Inkwell-Signature'],
-            't='.$timestamp.',v1='.$sign->invoke($instance, $timestamp, $body, self::SECRET),
-            'inkwell-v0 signature drifted from the golden',
-        );
+    private function destination(bool $rotating): FormDestination
+    {
+        $destination = new FormDestination;
+        $destination->id = '01JGOLDEN0DESTINATION00001';
+        $destination->form_id = '01JGOLDEN0FORM000000000001';
+        $destination->kind = FormDestination::KIND_WEBHOOK;
+        $destination->config = [
+            'url' => 'https://example.com/hook',
+            'secret' => self::SECRET,
+        ];
 
         if ($rotating) {
-            $this->assertSame(
-                $golden['headers']['X-Inkwell-Signature-Old'],
-                't='.$timestamp.',v1='.$sign->invoke($instance, $timestamp, $body, self::PREVIOUS_SECRET),
-                'rotation signature drifted from the golden',
-            );
+            $destination->previous_secret = self::PREVIOUS_SECRET;
+            $destination->previous_secret_expires_at = CarbonImmutable::parse(self::FROZEN_TIME)->addDay();
         }
+
+        return $destination;
     }
 }

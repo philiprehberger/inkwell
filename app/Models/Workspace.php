@@ -10,7 +10,7 @@ class Workspace extends Model
 {
     use HasUlids;
 
-    protected $fillable = ['name', 'slug'];
+    protected $fillable = ['name', 'slug', 'egress_allowlist'];
 
     public function forms(): HasMany
     {
@@ -30,5 +30,12 @@ class Workspace extends Model
     public function auditEvents(): HasMany
     {
         return $this->hasMany(AuditEvent::class);
+    }
+
+    protected function casts(): array
+    {
+        return [
+            'egress_allowlist' => 'array',
+        ];
     }
 }
