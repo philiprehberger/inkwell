@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "f8843e0613aaf527ea02f2c4f16e987a",
+    "content-hash": "145a6a907d17516a9d1d9896485548f6",
     "packages": [
         {
             "name": "aws/aws-crt-php",
@@ -5015,7 +5015,7 @@
             "version": "v0.2.0",
             "source": {
                 "type": "git",
-                "url": "git@github.com:philiprehberger/php-interchange.git",
+                "url": "https://github.com/philiprehberger/php-interchange.git",
                 "reference": "d068e98c063683a3f1a85387911b88e2eef592a8"
             },
             "dist": {
@@ -5047,22 +5047,7 @@
                     "PhilipRehberger\\Interchange\\": "src/"
                 }
             },
-            "autoload-dev": {
-                "psr-4": {
-                    "PhilipRehberger\\Interchange\\Tests\\": "tests/"
-                }
-            },
-            "scripts": {
-                "test": [
-                    "vendor/bin/phpunit"
-                ],
-                "lint": [
-                    "vendor/bin/pint"
-                ],
-                "analyse": [
-                    "vendor/bin/phpstan analyse"
-                ]
-            },
+            "notification-url": "https://packagist.org/downloads/",
             "license": [
                 "MIT"
             ],
@@ -5076,12 +5061,22 @@
             "description": "Service contract for interoperable HTTP services: W3C Trace Context across HTTP and queue boundaries, Standard Webhooks signing, and pluggable signature schemes",
             "homepage": "https://github.com/philiprehberger/php-interchange",
             "keywords": [
+                "W3C",
                 "laravel",
                 "observability",
                 "standard-webhooks",
                 "trace-context",
-                "w3c",
                 "webhooks"
+            ],
+            "support": {
+                "issues": "https://github.com/philiprehberger/php-interchange/issues",
+                "source": "https://github.com/philiprehberger/php-interchange/tree/v0.2.0"
+            },
+            "funding": [
+                {
+                    "url": "https://github.com/philiprehberger",
+                    "type": "github"
+                }
             ],
             "time": "2026-08-05T17:13:38+00:00"
         },
@@ -11123,16 +11118,16 @@
         },
         {
             "name": "philiprehberger/interchange-conformance",
-            "version": "v0.1.1",
+            "version": "v0.1.2",
             "source": {
                 "type": "git",
-                "url": "git@github.com:philiprehberger/php-interchange-conformance.git",
-                "reference": "bd9d9b9043dd3618b385899bca76a07e146c8dc3"
+                "url": "https://github.com/philiprehberger/php-interchange-conformance.git",
+                "reference": "a4a704f47a752f999c9e7d26feb43aaaa4ed743b"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/philiprehberger/php-interchange-conformance/zipball/bd9d9b9043dd3618b385899bca76a07e146c8dc3",
-                "reference": "bd9d9b9043dd3618b385899bca76a07e146c8dc3",
+                "url": "https://api.github.com/repos/philiprehberger/php-interchange-conformance/zipball/a4a704f47a752f999c9e7d26feb43aaaa4ed743b",
+                "reference": "a4a704f47a752f999c9e7d26feb43aaaa4ed743b",
                 "shasum": ""
             },
             "require": {
@@ -11150,11 +11145,7 @@
                     "PhilipRehberger\\InterchangeConformance\\": "src/"
                 }
             },
-            "scripts": {
-                "lint": [
-                    "vendor/bin/pint"
-                ]
-            },
+            "notification-url": "https://packagist.org/downloads/",
             "license": [
                 "MIT"
             ],
@@ -11174,7 +11165,11 @@
                 "standard-webhooks",
                 "trace-context"
             ],
-            "time": "2026-08-05T17:16:16+00:00"
+            "support": {
+                "issues": "https://github.com/philiprehberger/php-interchange-conformance/issues",
+                "source": "https://github.com/philiprehberger/php-interchange-conformance/tree/v0.1.2"
+            },
+            "time": "2026-08-05T17:22:55+00:00"
         },
         {
             "name": "phpunit/php-code-coverage",
