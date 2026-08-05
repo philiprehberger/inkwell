@@ -106,11 +106,11 @@
     "repositories": [
         {
             "type": "vcs",
-            "url": "/home/ubuntu/projects/packages/php/php-interchange-conformance"
+            "url": "https://github.com/philiprehberger/php-interchange-conformance.git"
         },
         {
             "type": "vcs",
-            "url": "/home/ubuntu/projects/packages/php/php-interchange"
+            "url": "https://github.com/philiprehberger/php-interchange.git"
         }
     ]
 }

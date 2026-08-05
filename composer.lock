@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "c799ce372c64d517bd61d90c0030892d",
+    "content-hash": "f8843e0613aaf527ea02f2c4f16e987a",
     "packages": [
         {
             "name": "aws/aws-crt-php",
@@ -5015,8 +5015,14 @@
             "version": "v0.2.0",
             "source": {
                 "type": "git",
-                "url": "/home/ubuntu/projects/packages/php/php-interchange",
+                "url": "git@github.com:philiprehberger/php-interchange.git",
                 "reference": "d068e98c063683a3f1a85387911b88e2eef592a8"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/philiprehberger/php-interchange/zipball/d068e98c063683a3f1a85387911b88e2eef592a8",
+                "reference": "d068e98c063683a3f1a85387911b88e2eef592a8",
+                "shasum": ""
             },
             "require": {
                 "philiprehberger/php-webhook-signature": "1.0.0",
@@ -11120,8 +11126,14 @@
             "version": "v0.1.1",
             "source": {
                 "type": "git",
-                "url": "/home/ubuntu/projects/packages/php/php-interchange-conformance",
+                "url": "git@github.com:philiprehberger/php-interchange-conformance.git",
                 "reference": "bd9d9b9043dd3618b385899bca76a07e146c8dc3"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/philiprehberger/php-interchange-conformance/zipball/bd9d9b9043dd3618b385899bca76a07e146c8dc3",
+                "reference": "bd9d9b9043dd3618b385899bca76a07e146c8dc3",
+                "shasum": ""
             },
             "require": {
                 "philiprehberger/interchange": "0.2.0",
