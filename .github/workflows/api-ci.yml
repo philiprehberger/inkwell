@@ -50,3 +50,9 @@ jobs:
 
       - name: Run PHPUnit
         run: php artisan test
+
+      - name: Interchange conformance
+        # Plan 6.11 — conformance is enforced on every push, not asserted once
+        # at adoption. Without this the dashboard's green cell decays silently
+        # the first time someone is in a hurry.
+        run: vendor/bin/phpunit --filter InterchangeConformanceTest

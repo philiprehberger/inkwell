@@ -24,7 +24,7 @@
         "predis/predis": "^3.5",
         "sentry/sentry-laravel": "^4.0",
         "xenolope/quahog": "^3.0",
-        "philiprehberger/interchange": "^0.1.2"
+        "philiprehberger/interchange": "^0.2.0"
     },
     "require-dev": {
         "brianium/paratest": "^7.20",
@@ -35,7 +35,8 @@
         "laravel/pint": "^1.27",
         "mockery/mockery": "^1.6",
         "nunomaduro/collision": "^8.6",
-        "phpunit/phpunit": "^12.5.12"
+        "phpunit/phpunit": "^12.5.12",
+        "philiprehberger/interchange-conformance": "^0.1.1"
     },
     "autoload": {
         "psr-4": {
@@ -103,6 +104,10 @@
     "minimum-stability": "stable",
     "prefer-stable": true,
     "repositories": [
+        {
+            "type": "vcs",
+            "url": "/home/ubuntu/projects/packages/php/php-interchange-conformance"
+        },
         {
             "type": "vcs",
             "url": "/home/ubuntu/projects/packages/php/php-interchange"

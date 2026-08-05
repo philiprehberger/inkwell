@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "d4be98841c7e546ded076c02bb2f3c7c",
+    "content-hash": "c799ce372c64d517bd61d90c0030892d",
     "packages": [
         {
             "name": "aws/aws-crt-php",
@@ -5012,11 +5012,11 @@
         },
         {
             "name": "philiprehberger/interchange",
-            "version": "v0.1.2",
+            "version": "v0.2.0",
             "source": {
                 "type": "git",
                 "url": "/home/ubuntu/projects/packages/php/php-interchange",
-                "reference": "28b725748f96b311dae21554d994bf80defd2d97"
+                "reference": "d068e98c063683a3f1a85387911b88e2eef592a8"
             },
             "require": {
                 "philiprehberger/php-webhook-signature": "1.0.0",
@@ -5077,7 +5077,7 @@
                 "w3c",
                 "webhooks"
             ],
-            "time": "2026-08-05T16:57:52+00:00"
+            "time": "2026-08-05T17:13:38+00:00"
         },
         {
             "name": "philiprehberger/php-webhook-signature",
@@ -11114,6 +11114,55 @@
                 "source": "https://github.com/phar-io/version/tree/3.2.1"
             },
             "time": "2022-02-21T01:04:05+00:00"
+        },
+        {
+            "name": "philiprehberger/interchange-conformance",
+            "version": "v0.1.1",
+            "source": {
+                "type": "git",
+                "url": "/home/ubuntu/projects/packages/php/php-interchange-conformance",
+                "reference": "bd9d9b9043dd3618b385899bca76a07e146c8dc3"
+            },
+            "require": {
+                "philiprehberger/interchange": "0.2.0",
+                "php": "^8.2"
+            },
+            "require-dev": {
+                "laravel/pint": "^1.0",
+                "orchestra/testbench": "^9.0|^10.0",
+                "phpunit/phpunit": "^11.0|^12.0"
+            },
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "PhilipRehberger\\InterchangeConformance\\": "src/"
+                }
+            },
+            "scripts": {
+                "lint": [
+                    "vendor/bin/pint"
+                ]
+            },
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Philip Rehberger",
+                    "email": "me@philiprehberger.com",
+                    "role": "Developer"
+                }
+            ],
+            "description": "Conformance assertions for the Interchange service contract — framework-agnostic, installable alongside any test runner",
+            "homepage": "https://github.com/philiprehberger/php-interchange-conformance",
+            "keywords": [
+                "conformance",
+                "contract-testing",
+                "interchange",
+                "standard-webhooks",
+                "trace-context"
+            ],
+            "time": "2026-08-05T17:16:16+00:00"
         },
         {
             "name": "phpunit/php-code-coverage",

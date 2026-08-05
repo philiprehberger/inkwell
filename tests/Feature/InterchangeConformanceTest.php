@@ -7,6 +7,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use PhilipRehberger\Interchange\Conformance\ConformanceHarness;
 use PhilipRehberger\Interchange\Signing\StandardWebhooksScheme;
 use PhilipRehberger\Interchange\Tracing\TraceContext;
+use PhilipRehberger\InterchangeConformance\ConformanceSuite;
 use Tests\TestCase;
 
 /**
@@ -90,6 +91,30 @@ class InterchangeConformanceTest extends TestCase
 
         $this->assertStringStartsWith('t=', $result['headers']['x-inkwell-signature'] ?? '');
         $this->assertArrayNotHasKey('webhook-signature', $result['headers']);
+    }
+
+    /**
+     * The shared suite, run against Inkwell's own harness. This is the
+     * assertion set every service in the fleet is measured by — the same
+     * package, the same requirement keys, only the adapter differs.
+     */
+    public function test_the_shared_conformance_suite_passes(): void
+    {
+        $report = (new ConformanceSuite($this->harness))->run();
+
+        $this->assertTrue($report->isConformant(), $report->toMatrix());
+        $this->assertSame('pass', $report->results()['sig.standard-webhooks.sign']['state']);
+        $this->assertSame('pass', $report->results()['sig.standard-webhooks.verify']['state']);
+        $this->assertSame('pass', $report->results()['sig.secret.decode']['state']);
+    }
+
+    public function test_the_conformance_report_is_machine_readable_for_the_dashboard(): void
+    {
+        $decoded = json_decode((new ConformanceSuite($this->harness))->run()->toJson(), true);
+
+        $this->assertSame('inkwell', $decoded['service']);
+        $this->assertSame('ci', $decoded['source']);
+        $this->assertTrue($decoded['conformant']);
     }
 
     public function test_the_harness_declares_both_schemes(): void
