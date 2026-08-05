@@ -79,3 +79,42 @@ npm run deploy
 ## License
 
 MIT
+
+## Authenticated destinations
+
+A webhook destination can carry custom headers, so Inkwell can post into an API that requires a credential rather than only into endpoints that accept anonymous POSTs.
+
+That capability is deliberately constrained, because tenant-controlled headers on a tenant-controlled URL in a multi-tenant service is request forgery with our IP reputation attached:
+
+- Header names are **allowlisted**, not denylisted — a denylist fails open the moment a new dangerous header is standardised.
+- `Host`, `Cookie`, `Content-Length` and hop-by-hop headers are rejected regardless of casing or prefix.
+- At most 10 headers, values under 2 KB, no CR/LF (header injection).
+- Tenant headers can never override a signature or the content type.
+- Credential values are **encrypted at rest and never returned after write**. Reads yield a mask; an operator may replace a value, nobody may read one.
+- A destination carrying a credential requires its workspace to define an **egress allowlist** first. Uncredentialed destinations are unaffected.
+
+Full threat model: `docs/security/authenticated-destinations.md`.
+
+## Envelope shapes
+
+Three fixed shapes, selected per destination:
+
+| Shape | Body |
+|---|---|
+| `inkwell-native` *(default)* | The original envelope, unchanged |
+| `webhook-relay` | `{"type": …, "payload": {…}}` |
+| `flat` | The submission payload alone |
+
+**Templates are deliberately not supported.** A template engine over tenant input is a code-execution surface, and a "restricted expression syntax" is an intention rather than a guarantee. These shapes cover the real requirement with no injection surface.
+
+## Signature schemes
+
+`inkwell-v0` (the original `t=…,v1=…` HMAC) remains the **permanent default**, and its output is byte-identical to before — enforced by a golden regression captured before any of this work began.
+
+`standard-webhooks` is available as an opt-in alternative, implementing the [Standard Webhooks](https://www.standardwebhooks.com/) spec via `philiprehberger/interchange`: `webhook-id` / `webhook-timestamp` / `webhook-signature`, base64 signatures, and rotation as a space-delimited list in one header.
+
+**Switching schemes is not a config flip.** Standard Webhooks secrets are base64 with a `whsec_` prefix and the HMAC key is the decoded bytes, so an existing arbitrary-string secret cannot be reinterpreted. Adopting it on a live destination means issuing a new secret and coordinating with whoever consumes it — which is why it is per-destination and never bulk.
+
+## Tracing
+
+Inkwell accepts, propagates and echoes W3C Trace Context, including **across the queue boundary** — a delivery dispatched from a submission carries the same trace to the receiving service.

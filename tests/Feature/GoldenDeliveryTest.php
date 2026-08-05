@@ -8,6 +8,7 @@ use App\Services\Destinations\WebhookDestination;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 /**
@@ -22,6 +23,8 @@ use Tests\TestCase;
  */
 class GoldenDeliveryTest extends TestCase
 {
+    use RefreshDatabase;
+
     private const FROZEN_TIME = '2026-01-15T12:00:00+00:00';
 
     private const SECRET = 'golden-test-secret-not-a-real-one';

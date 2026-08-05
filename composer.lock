@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "ba3d9b6c22ff1f11d3e82abcd8d52210",
+    "content-hash": "d4be98841c7e546ded076c02bb2f3c7c",
     "packages": [
         {
             "name": "aws/aws-crt-php",
@@ -5012,11 +5012,11 @@
         },
         {
             "name": "philiprehberger/interchange",
-            "version": "v0.1.1",
+            "version": "v0.1.2",
             "source": {
                 "type": "git",
                 "url": "/home/ubuntu/projects/packages/php/php-interchange",
-                "reference": "eb6ae6a4443f3ce88a08cfdfc62f7782446832f5"
+                "reference": "28b725748f96b311dae21554d994bf80defd2d97"
             },
             "require": {
                 "philiprehberger/php-webhook-signature": "1.0.0",
@@ -5077,7 +5077,7 @@
                 "w3c",
                 "webhooks"
             ],
-            "time": "2026-08-05T16:16:42+00:00"
+            "time": "2026-08-05T16:57:52+00:00"
         },
         {
             "name": "philiprehberger/php-webhook-signature",

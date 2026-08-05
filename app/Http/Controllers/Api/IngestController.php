@@ -12,6 +12,8 @@ use App\Services\Spam\SpamScorer;
 use App\Services\Spam\SubmissionContext;
 use App\Services\Spam\SubmissionState;
 use App\Services\SubmissionDedupCache;
+use PhilipRehberger\Interchange\Tracing\TraceContext;
+use PhilipRehberger\Interchange\Tracing\TraceScope;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -118,6 +120,15 @@ class IngestController extends Controller
             'spam_signals' => $signals,
             'state' => $state,
             'payload_hash' => $hash,
+            // Plan 5.11 — stamp the trace so a submission can be followed
+            // across the pipeline. The class is advisory-only (SPEC §3.4):
+            // it never gates storage or exposure here, it only records what
+            // the caller claimed so a scenario run is distinguishable.
+            'trace_id' => TraceScope::current()?->traceId,
+            'trace_class' => TraceContext::parse(
+                $request->header('traceparent'),
+                $request->header('tracestate'),
+            )?->state?->get('mnl_class') ?? 'production',
         ]);
 
         $duplicateOf = SubmissionDedupCache::claim($form, $hash, $submission->id);

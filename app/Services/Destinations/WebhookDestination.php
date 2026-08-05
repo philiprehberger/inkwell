@@ -3,6 +3,7 @@
 namespace App\Services\Destinations;
 
 use App\Models\FormDestination;
+use App\Models\SignatureSchemeUsage;
 use App\Models\Submission;
 use App\Services\Destinations\Security\EgressPolicy;
 use App\Services\Destinations\Security\HeaderPolicy;
@@ -143,6 +144,10 @@ final class WebhookDestination implements Destination
         // Plan 5.11 — outbound trace context, so the delivery joins the trace
         // rather than starting a new one.
         $headers += PropagatingHttpClient::headers();
+
+        // Plan D-8 — durable evidence of which scheme was actually used, so
+        // the 13.1 sunset decision does not rest on log retention.
+        SignatureSchemeUsage::record($destination->id, $scheme);
 
         try {
             $start = microtime(true);

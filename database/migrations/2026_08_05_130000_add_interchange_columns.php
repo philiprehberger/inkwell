@@ -43,14 +43,14 @@ return new class extends Migration
         // exactly the window the sunset rule needs — too thin to rely on.
         Schema::create('signature_scheme_usage', function (Blueprint $table) {
             $table->id();
-            $table->char('form_id', 26);
+            $table->char('destination_id', 26);
             $table->string('scheme', 32);
             $table->unsignedBigInteger('requests')->default(0);
             $table->timestamp('first_seen_at')->nullable();
             $table->timestamp('last_seen_at')->nullable();
             $table->timestamps();
 
-            $table->unique(['form_id', 'scheme']);
+            $table->unique(['destination_id', 'scheme']);
             $table->index('last_seen_at');
         });
     }
