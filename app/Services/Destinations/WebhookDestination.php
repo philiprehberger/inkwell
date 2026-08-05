@@ -3,8 +3,13 @@
 namespace App\Services\Destinations;
 
 use App\Models\FormDestination;
+use App\Models\SignatureSchemeUsage;
 use App\Models\Submission;
+use App\Services\Destinations\Security\EgressPolicy;
+use App\Services\Destinations\Security\HeaderPolicy;
 use App\Services\SsrfGuard;
+use PhilipRehberger\Interchange\Http\PropagatingHttpClient;
+use PhilipRehberger\Interchange\Signing\StandardWebhooksScheme;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -41,6 +46,30 @@ final class WebhookDestination implements Destination
         if (! isset($config['secret']) || ! is_string($config['secret']) || strlen($config['secret']) < 16) {
             $errors['secret'] = ['Webhook secret of at least 16 characters is required.'];
         }
+
+        // Plan 5.2 — custom headers are allowlisted, bounded, and injection-checked.
+        $headers = $config['headers'] ?? [];
+        if ($headers !== [] && ! is_array($headers)) {
+            $errors['headers'] = ['Headers must be a name/value map.'];
+        } elseif (is_array($headers) && $headers !== []) {
+            $headerErrors = (new HeaderPolicy)->validate($headers);
+            if ($headerErrors !== []) {
+                $errors['headers'] = $headerErrors;
+            }
+
+            // Plan 5.3 — a credentialed destination must name where it may go.
+            if (is_string($url)) {
+                $egressErrors = (new EgressPolicy)->validate($config['workspace'] ?? null, $url, $headers);
+                if ($egressErrors !== []) {
+                    $errors['egress'] = $egressErrors;
+                }
+            }
+        }
+
+        if (isset($config['envelope_shape']) && EnvelopeShape::tryFrom((string) $config['envelope_shape']) === null) {
+            $errors['envelope_shape'] = ['Unknown envelope shape. Allowed: inkwell-native, webhook-relay, flat.'];
+        }
+
         return $errors === [] ? ConfigValidation::ok() : ConfigValidation::fail($errors);
     }
 
@@ -60,30 +89,65 @@ final class WebhookDestination implements Destination
             return AttemptResult::failed('SSRF guard refused destination URL', 'ssrf_blocked');
         }
 
-        $body = json_encode([
-            'id' => $submission->id,
-            'form_id' => $submission->form_id,
-            'state' => $submission->state,
-            'spam_score' => $submission->spam_score,
-            'payload' => $submission->payload,
-            'meta' => $submission->meta,
-            'created_at' => $submission->created_at?->toIso8601String(),
-        ], JSON_UNESCAPED_SLASHES);
-        $timestamp = time();
-        $sig = $this->sign($timestamp, $body, $secret);
+        // Plan 5.5 — a fixed shape, never a tenant-authored template. The
+        // default reproduces the pre-adoption envelope byte for byte; the
+        // golden regression (T-5.2) is what proves it.
+        $shape = $destination->envelope_shape instanceof EnvelopeShape
+            ? $destination->envelope_shape
+            : EnvelopeShape::tryFrom((string) ($destination->envelope_shape ?? '')) ?? EnvelopeShape::InkwellNative;
+
+        $body = json_encode($shape->build($submission), JSON_UNESCAPED_SLASHES);
+        // now() rather than time(): identical in production, but freezable, which
+        // is what makes the D-3 golden regression checkable at all.
+        $timestamp = now()->getTimestamp();
 
         $headers = [
             'Content-Type' => 'application/json',
-            'X-Inkwell-Signature' => "t={$timestamp},v1={$sig}",
             'User-Agent' => 'Inkwell-Webhook/1.0',
         ];
 
-        if (is_string($destination->previous_secret ?? null)
-            && $destination->previous_secret_expires_at !== null
-            && $destination->previous_secret_expires_at->isFuture()) {
-            $oldSig = $this->sign($timestamp, $body, (string) $destination->previous_secret);
-            $headers['X-Inkwell-Signature-Old'] = "t={$timestamp},v1={$oldSig}";
+        // Plan 5.9 — scheme selection. `inkwell-v0` MUST stay byte-identical:
+        // existing consumers hold secrets and verify these signatures, and a
+        // change they did not agree to is a broken integration.
+        $scheme = (string) ($destination->signature_scheme ?? 'inkwell-v0');
+
+        if ($scheme === 'standard-webhooks') {
+            $standard = new StandardWebhooksScheme;
+            $secrets = [$secret];
+
+            if ($this->rotationActive($destination)) {
+                $secrets[] = (string) $destination->previous_secret;
+            }
+
+            // Rotation is a space-delimited list in the ONE header, not a
+            // second header the way inkwell-v0 does it.
+            $headers += $standard->signWithRotation($submission->id, $body, $secrets, $timestamp);
+        } else {
+            $sig = $this->sign($timestamp, $body, $secret);
+            $headers['X-Inkwell-Signature'] = "t={$timestamp},v1={$sig}";
+
+            if ($this->rotationActive($destination)) {
+                $oldSig = $this->sign($timestamp, $body, (string) $destination->previous_secret);
+                $headers['X-Inkwell-Signature-Old'] = "t={$timestamp},v1={$oldSig}";
+            }
         }
+
+        // Plan 5.2 — tenant headers are applied last but may never override a
+        // signature or the content type: an allowlisted name that collided
+        // with one of ours would let a tenant forge or strip a signature.
+        foreach ($this->tenantHeaders($destination) as $name => $value) {
+            if (! array_key_exists($name, $headers)) {
+                $headers[$name] = $value;
+            }
+        }
+
+        // Plan 5.11 — outbound trace context, so the delivery joins the trace
+        // rather than starting a new one.
+        $headers += PropagatingHttpClient::headers();
+
+        // Plan D-8 — durable evidence of which scheme was actually used, so
+        // the 13.1 sunset decision does not rest on log retention.
+        SignatureSchemeUsage::record($destination->id, $scheme);
 
         try {
             $start = microtime(true);
@@ -109,6 +173,36 @@ final class WebhookDestination implements Destination
         // Phase 5: ping the destination URL with a HEAD or a no-op POST to
         // verify reachability. For now config-valid = healthy.
         return new HealthResult(HealthResult::HEALTHY);
+    }
+
+    private function rotationActive(FormDestination $destination): bool
+    {
+        return is_string($destination->previous_secret ?? null)
+            && $destination->previous_secret_expires_at !== null
+            && $destination->previous_secret_expires_at->isFuture();
+    }
+
+    /** @return array<string, string> */
+    private function tenantHeaders(FormDestination $destination): array
+    {
+        $headers = $destination->headers;
+
+        if (! is_array($headers) || $headers === []) {
+            return [];
+        }
+
+        $policy = new HeaderPolicy;
+        $out = [];
+
+        foreach ($headers as $name => $value) {
+            // Re-check at send time, not only at save time: the allowlist may
+            // have tightened since the destination was created.
+            if (is_string($value) && $policy->isAllowed((string) $name)) {
+                $out[(string) $name] = $value;
+            }
+        }
+
+        return $out;
     }
 
     private function sign(int $timestamp, string $body, string $secret): string

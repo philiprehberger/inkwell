@@ -706,6 +706,29 @@ components:
           type: string
           enum: [email, webhook, slack, discord, google_sheets, hubspot, mailchimp]
         config: { type: object, additionalProperties: true }
+        headers:
+          type: object
+          additionalProperties: { type: string }
+          description: >-
+            Custom request headers sent with each delivery. Credential-bearing
+            values are never returned — reads yield a masked placeholder. An
+            operator may replace a value; nobody may retrieve one.
+        envelope_shape:
+          type: string
+          enum: [inkwell-native, webhook-relay, flat]
+          default: inkwell-native
+          description: >-
+            Body shape for this destination. Fixed shapes only; templates are
+            deliberately not supported.
+        signature_scheme:
+          type: string
+          enum: [inkwell-v0, standard-webhooks]
+          default: inkwell-v0
+          description: >-
+            Signing scheme. `inkwell-v0` is the permanent default. Switching to
+            `standard-webhooks` requires a newly issued `whsec_`-prefixed
+            secret and coordination with the consumer — existing secrets cannot
+            be reinterpreted, so this is never a bulk migration.
         enabled: { type: boolean }
         priority: { type: integer }
         health: { type: string, enum: [healthy, degraded, failed], nullable: true }
@@ -719,6 +742,22 @@ components:
           type: string
           enum: [email, webhook, slack, discord, google_sheets, hubspot, mailchimp]
         config: { type: object, additionalProperties: true }
+        headers:
+          type: object
+          additionalProperties: { type: string }
+          description: >-
+            Allowlisted header names only, at most 10, values under 2048 chars
+            and free of line breaks. `Host`, `Cookie`, `Content-Length` and
+            hop-by-hop headers are rejected. A destination carrying a credential
+            requires its workspace to define an egress allowlist first.
+        envelope_shape:
+          type: string
+          enum: [inkwell-native, webhook-relay, flat]
+          default: inkwell-native
+        signature_scheme:
+          type: string
+          enum: [inkwell-v0, standard-webhooks]
+          default: inkwell-v0
         enabled: { type: boolean, default: true }
         priority: { type: integer, default: 0 }
       required: [kind, config]

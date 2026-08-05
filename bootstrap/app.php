@@ -27,6 +27,12 @@ return Application::configure(basePath: dirname(__DIR__))
         // Cloudflare ranges are refreshed via the `inkwell:refresh-trusted-proxies`
         // command (Phase 6 wiring).
         $middleware->trustProxies(at: '*');
+
+        // Plan 5.6 — accept and echo W3C trace context on every request, so a
+        // submission joins the caller's trace rather than starting its own.
+        // Queue-boundary propagation is registered by the package's service
+        // provider; this is the HTTP half.
+        $middleware->append(\PhilipRehberger\Interchange\Http\TraceMiddleware::class);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(

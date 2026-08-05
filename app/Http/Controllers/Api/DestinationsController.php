@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Form;
 use App\Models\FormDestination;
+use App\Services\Destinations\EnvelopeShape;
+use App\Services\Destinations\Security\HeaderPolicy;
 use App\Models\Workspace;
 use App\Services\AuditLogger;
 use Illuminate\Http\JsonResponse;
@@ -31,6 +33,9 @@ class DestinationsController extends Controller
             'config' => ['required', 'array'],
             'enabled' => ['nullable', 'boolean'],
             'priority' => ['nullable', 'integer', 'min:0'],
+            'headers' => ['nullable', 'array'],
+            'envelope_shape' => ['nullable', 'string', 'in:inkwell-native,webhook-relay,flat'],
+            'signature_scheme' => ['nullable', 'string', 'in:inkwell-v0,standard-webhooks'],
         ])->validate();
 
         $destination = $form->destinations()->create([
@@ -38,6 +43,12 @@ class DestinationsController extends Controller
             'config' => $data['config'],
             'enabled' => $data['enabled'] ?? true,
             'priority' => $data['priority'] ?? 0,
+            'headers' => $data['headers'] ?? null,
+            'envelope_shape' => $data['envelope_shape'] ?? EnvelopeShape::InkwellNative->value,
+            // Defaults to the native scheme permanently: Standard Webhooks
+            // needs a newly issued whsec_ secret and a consumer handshake, so
+            // it can never be the default for an existing destination.
+            'signature_scheme' => $data['signature_scheme'] ?? 'inkwell-v0',
         ]);
 
         AuditLogger::record($this->workspace($request), 'destination', $destination->id, 'created', [
@@ -56,11 +67,21 @@ class DestinationsController extends Controller
             'config' => ['sometimes', 'array'],
             'enabled' => ['sometimes', 'boolean'],
             'priority' => ['sometimes', 'integer', 'min:0'],
+            'headers' => ['sometimes', 'nullable', 'array'],
+            'envelope_shape' => ['sometimes', 'string', 'in:inkwell-native,webhook-relay,flat'],
+            'signature_scheme' => ['sometimes', 'string', 'in:inkwell-v0,standard-webhooks'],
         ])->validate();
 
         $destination->fill($data)->save();
 
-        AuditLogger::record($this->workspace($request), 'destination', $destination->id, 'updated', $data, request: $request);
+        // Plan 5.4 — header values are credentials and must not land in an
+        // audit row any more than in a log line.
+        $audited = $data;
+        if (isset($audited['headers']) && is_array($audited['headers'])) {
+            $audited['headers'] = (new HeaderPolicy)->redact($audited['headers']);
+        }
+
+        AuditLogger::record($this->workspace($request), 'destination', $destination->id, 'updated', $audited, request: $request);
 
         return response()->json($this->serialize($destination));
     }
@@ -142,11 +163,20 @@ class DestinationsController extends Controller
         // Never expose secret in API responses.
         unset($config['secret']);
 
+        // Plan 5.4 — credential header values never come back out. An
+        // operator may replace one; nobody may read one.
+        $headers = is_array($d->headers) ? $d->headers : [];
+
         return [
             'id' => $d->id,
             'form_id' => $d->form_id,
             'kind' => $d->kind,
             'config' => $config,
+            'headers' => (new HeaderPolicy)->redact($headers),
+            'envelope_shape' => $d->envelope_shape instanceof EnvelopeShape
+                ? $d->envelope_shape->value
+                : (string) ($d->envelope_shape ?? EnvelopeShape::InkwellNative->value),
+            'signature_scheme' => $d->signature_scheme ?? 'inkwell-v0',
             'enabled' => $d->enabled,
             'priority' => $d->priority,
             'health' => $d->health,

@@ -34,6 +34,9 @@ class FormDestination extends Model
         'form_id',
         'kind',
         'config',
+        'headers',
+        'envelope_shape',
+        'signature_scheme',
         'enabled',
         'priority',
         'health',
@@ -49,6 +52,11 @@ class FormDestination extends Model
     {
         return [
             'config' => 'array',
+            // Plan 5.4 — header values are credentials, not configuration.
+            // `encrypted:array` means they are ciphertext at rest rather than
+            // readable json in a column an operator or a backup can browse.
+            'headers' => 'encrypted:array',
+            'envelope_shape' => \App\Services\Destinations\EnvelopeShape::class,
             'enabled' => 'boolean',
             'priority' => 'integer',
             'last_attempted_at' => 'datetime',
