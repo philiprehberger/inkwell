@@ -43,3 +43,7 @@ Thumbs.db
 /sdks/python/.pytest_cache/
 
 /web/.deploy-staging/
+
+# 1Password reference templates (part of the in-progress secrets migration)
+*.env.op
+.env.op
