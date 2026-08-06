@@ -316,6 +316,17 @@ async function runComposerInstall() {
 }
 
 async function runNpmBuild() {
+    // Inkwell has no vite config at all — Filament owns its own assets — so
+    // `npm run build` falls back to looking for an index.html entry that does
+    // not exist and fails the whole deploy. Distill hit the same thing and got
+    // this guard; Inkwell never did.
+    if (!fsSync.existsSync(path.join(PROJECT_ROOT, 'vite.config.js')) &&
+        !fsSync.existsSync(path.join(PROJECT_ROOT, 'vite.config.ts'))) {
+        log('⏭️', ' No vite config found — skipping front-end build (Filament owns its own assets)');
+
+        return;
+    }
+
     log('🔨', 'Building frontend assets (Vite)...');
     try {
         execSync('npm run build', {
