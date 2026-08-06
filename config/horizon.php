@@ -199,7 +199,16 @@ return [
     'defaults' => [
         'supervisor-1' => [
             'connection' => 'redis',
-            'queue' => ['default'],
+            // The queues this application actually dispatches to. Horizon
+            // shipped watching only `default`, which no Inkwell job has ever
+            // used — every one goes to inkwell-fast (DispatchDestinationsJob,
+            // webhook/email deliveries), inkwell-slow (slower destinations) or
+            // inkwell-scan (upload scanning). A worker watching `default`
+            // would run, report healthy, and process nothing.
+            //
+            // Ordered by priority: a destination delivery should not wait
+            // behind a virus scan.
+            'queue' => ['inkwell-fast', 'inkwell-slow', 'inkwell-scan', 'default'],
             'balance' => 'auto',
             'autoScalingStrategy' => 'time',
             'maxProcesses' => 1,
