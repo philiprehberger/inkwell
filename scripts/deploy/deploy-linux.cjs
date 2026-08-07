@@ -1,5 +1,5 @@
 /**
- * Webhook Relay - Release-Based Deployment Script (Linux/WSL)
+ * Inkwell - Release-Based Deployment Script (Linux/WSL)
  *
  * Linux/WSL version of the deployment script. Handles WSL-specific issues:
  * - Resolves Windows paths (C:/Users/...) to WSL paths (/mnt/c/Users/...)
@@ -20,7 +20,7 @@
  *   --migrate       Run database migrations on server
  *
  * Server Structure:
- *   /var/www/webhook-relay/
+ *   /var/www/inkwell/
  *   ├── releases/
  *   │   ├── 20260115120000/
  *   │   └── ...
@@ -111,7 +111,7 @@ const CONFIG = {
     },
     paths: {
         // Support both SERVER_BASE_PATH and SERVER_DEST_PATH (.env.deployment uses DEST_PATH)
-        basePath: (process.env.SERVER_BASE_PATH || process.env.SERVER_DEST_PATH || '/var/www/webhook-relay').trim(),
+        basePath: (process.env.SERVER_BASE_PATH || process.env.SERVER_DEST_PATH || '/var/www/inkwell').trim(),
         releasesDir: 'releases',
         sharedDir: 'shared',
         currentLink: 'current',
@@ -794,12 +794,16 @@ async function deploy(options = {}) {
         log('✅', 'Apache reloaded');
 
         log('♻️', ' Restarting queue workers...');
-        await execSSH(ssh, 'sudo supervisorctl restart webhook-relay-horizon:*', { ignoreError: true });
+        // inkwell-horizon, not webhook-relay-horizon. This script was copied
+        // from webhook-relay and kept the donor's program name, so every
+        // inkwell deploy restarted a different service's workers and left
+        // inkwell's own running the previous release — queue jobs
+        // (DispatchDestinationsJob, DeliverToDestinationJob, ScanUploadJob)
+        // silently stayed on old code after every deploy.
+        await execSSH(ssh, 'sudo supervisorctl restart inkwell-horizon', { ignoreError: true });
         log('✅', 'Queue workers restarted');
 
         log('♻️', ' Restarting Reverb WebSocket server...');
-        await execSSH(ssh, 'sudo supervisorctl restart webhook-relay-reverb', { ignoreError: true });
-        log('✅', 'Reverb restarted');
 
         // ==== CREATE SENTRY RELEASE ====
         createSentryRelease(releaseName);
@@ -808,7 +812,11 @@ async function deploy(options = {}) {
         if (!options.skipVerify) {
             log('🏥', 'Running post-deploy health check...');
             let healthOk = false;
-            const healthUrl = `https://${process.env.MARKETING_DOMAIN || 'api.webhook-relay.dcsuniverse.com'}/health`;
+            // api.inkwell…/v1/healthz — the donor's host and path were both wrong, so
+            // this check failed on every deploy while the service was fine, and the
+            // banner below still said "successful".
+            const healthUrl = process.env.HEALTH_CHECK_URL
+                || `https://${process.env.API_DOMAIN || 'api.inkwell.philiprehberger.com'}/v1/healthz`;
             for (let attempt = 1; attempt <= 3; attempt++) {
                 try {
                     const result = await execSSH(ssh, `curl -sf --max-time 30 ${healthUrl}`, { ignoreError: true });
@@ -849,7 +857,7 @@ async function deploy(options = {}) {
         const elapsed = formatElapsedTime(Date.now() - startTime);
         log('🎉', `Deployment successful! Release: ${releaseName}`);
         log('⏱️', ` Total time: ${elapsed}`);
-        log('🌐', 'Site: https://api.webhook-relay.dcsuniverse.com');
+        log('🌐', 'Site: https://api.inkwell.philiprehberger.com');
 
     } catch (error) {
         const elapsed = formatElapsedTime(Date.now() - startTime);

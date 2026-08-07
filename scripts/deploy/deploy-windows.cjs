@@ -18,7 +18,7 @@
  *   --migrate       Run database migrations on server
  *
  * Server Structure:
- *   /var/www/webhook-relay/
+ *   /var/www/inkwell/
  *   ├── releases/
  *   │   ├── 20260115120000/
  *   │   └── ...
@@ -55,7 +55,7 @@ const CONFIG = {
         privateKey: (process.env.SERVER_PRIVATE_KEY || '').trim(),
     },
     paths: {
-        basePath: process.env.SERVER_BASE_PATH || '/var/www/webhook-relay',
+        basePath: process.env.SERVER_BASE_PATH || '/var/www/inkwell',
         releasesDir: 'releases',
         sharedDir: 'shared',
         currentLink: 'current',
@@ -615,11 +615,10 @@ async function deploy(options = {}) {
         log('✅', 'Apache reloaded');
 
         log('♻️', ' Restarting queue workers...');
-        await execSSH(ssh, 'sudo supervisorctl restart webhook-relay-horizon:*', { ignoreError: true });
+        await execSSH(ssh, 'sudo supervisorctl restart inkwell-horizon', { ignoreError: true });
         log('✅', 'Queue workers restarted');
 
         log('♻️', ' Restarting Reverb WebSocket server...');
-        await execSSH(ssh, 'sudo supervisorctl restart webhook-relay-reverb', { ignoreError: true });
         log('✅', 'Reverb restarted');
 
         // ==== CLEANUP OLD RELEASES ====
@@ -637,7 +636,7 @@ async function deploy(options = {}) {
         const elapsed = formatElapsedTime(Date.now() - startTime);
         log('🎉', `Deployment successful! Release: ${releaseName}`);
         log('⏱️', ` Total time: ${elapsed}`);
-        log('🌐', 'Site: https://api.webhook-relay.dcsuniverse.com');
+        log('🌐', 'Site: https://api.inkwell.philiprehberger.com');
 
     } catch (error) {
         const elapsed = formatElapsedTime(Date.now() - startTime);

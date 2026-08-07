@@ -35,7 +35,7 @@ const CONFIG = {
         privateKey: (process.env.SERVER_PRIVATE_KEY || '').trim(),
     },
     paths: {
-        basePath: process.env.SERVER_BASE_PATH || '/var/www/webhook-relay',
+        basePath: process.env.SERVER_BASE_PATH || '/var/www/inkwell',
         releasesDir: 'releases',
         currentLink: 'current',
     },
@@ -112,10 +112,9 @@ async function reloadServices(ssh) {
     await execSSH(ssh, 'sudo systemctl reload apache2');
 
     log('♻️', 'Restarting queue workers...');
-    await execSSH(ssh, 'sudo supervisorctl restart webhook-relay-horizon:*', { ignoreError: true });
+    await execSSH(ssh, 'sudo supervisorctl restart inkwell-horizon', { ignoreError: true });
 
     log('♻️', 'Restarting Reverb WebSocket server...');
-    await execSSH(ssh, 'sudo supervisorctl restart webhook-relay-reverb', { ignoreError: true });
 
     log('✅', 'Services reloaded');
 }
@@ -298,7 +297,7 @@ async function rollback(options = {}) {
 
         // Done
         log('🎉', `Rollback complete! Now running: ${targetRelease}`);
-        log('🌐', 'Site: https://api.webhook-relay.dcsuniverse.com');
+        log('🌐', 'Site: https://api.inkwell.philiprehberger.com');
 
     } catch (error) {
         log('❌', `Rollback failed: ${error.message}`);

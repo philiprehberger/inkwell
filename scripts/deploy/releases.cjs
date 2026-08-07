@@ -21,7 +21,7 @@ const CONFIG = {
         privateKey: (process.env.SERVER_PRIVATE_KEY || '').trim(),
     },
     paths: {
-        basePath: process.env.SERVER_BASE_PATH || '/var/www/webhook-relay',
+        basePath: process.env.SERVER_BASE_PATH || '/var/www/inkwell',
         releasesDir: 'releases',
         sharedDir: 'shared',
         currentLink: 'current',
