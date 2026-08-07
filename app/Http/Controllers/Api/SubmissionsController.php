@@ -55,28 +55,29 @@ class SubmissionsController extends Controller
 
     public function show(Request $request, string $id): JsonResponse
     {
-        $submission = $this->workspace($request)
-            ->forms()
-            ->getQuery()
-            ->newQuery()
-            ->from('submissions')
-            ->where('id', $id)
+        // Built as a plain scoped query. The previous version derived this from
+        // `$workspace->forms()` and then swapped the table with ->from('submissions'),
+        // which carried the Form model's global scope along with it — a stale
+        // `forms.workspace_id` predicate against a table no longer in the FROM.
+        // That only ever worked because WorkspaceScope was silently inert.
+        $model = Submission::with(['deliveries.destination', 'files'])
             ->where('workspace_id', $this->workspace($request)->id)
-            ->first();
-        if (! $submission) {
+            ->find($id);
+
+        if (! $model) {
             return response()->json([
                 'type' => 'about:blank',
                 'title' => 'Not found',
                 'status' => 404,
             ], 404, ['Content-Type' => 'application/problem+json']);
         }
-        $model = Submission::with(['deliveries.destination', 'files'])->findOrFail($id);
+
         return response()->json($this->serializeDetail($model));
     }
 
     public function promote(Request $request, string $id): JsonResponse
     {
-        $submission = Submission::with('deliveries')->findOrFail($id);
+        $submission = $this->findScoped($request, $id);
         if (! in_array($submission->state, [Submission::STATE_SPAM, Submission::STATE_QUARANTINED], true)) {
             return response()->json([
                 'type' => 'about:blank',
@@ -101,7 +102,7 @@ class SubmissionsController extends Controller
 
     public function replay(Request $request, string $id): JsonResponse
     {
-        $submission = Submission::with('deliveries')->findOrFail($id);
+        $submission = $this->findScoped($request, $id);
         $rateLimitKey = 'replay:'.$this->workspace($request)->id;
         $limit = 10;
         if (\Illuminate\Support\Facades\RateLimiter::tooManyAttempts($rateLimitKey, $limit)) {
@@ -127,6 +128,22 @@ class SubmissionsController extends Controller
     private function workspace(Request $request): Workspace
     {
         return $request->attributes->get('workspace');
+    }
+
+    /**
+     * Look a submission up inside the caller's workspace.
+     *
+     * Explicit rather than relying on the WorkspaceScope global scope. The
+     * scope resolves the workspace correctly again, but `promote` and `replay`
+     * previously depended on it alone and returned another tenant's payload
+     * for the whole period it was silently inert. A boundary this consequential
+     * should not rest on one shared control.
+     */
+    private function findScoped(Request $request, string $id): Submission
+    {
+        return Submission::with('deliveries')
+            ->where('workspace_id', $this->workspace($request)->id)
+            ->findOrFail($id);
     }
 
     private function serializeSummary(Submission $s): array

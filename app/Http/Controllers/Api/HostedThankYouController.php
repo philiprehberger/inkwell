@@ -3,13 +3,12 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\Submission;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 
 class HostedThankYouController extends Controller
 {
-    public function __invoke(Request $request, string $id): Response
+    public function __invoke(Request $request): Response
     {
         // Minimal HTML thank-you page. Phase 7's docs site replaces this with a
         // themeable per-workspace branded page.

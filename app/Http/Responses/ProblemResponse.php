@@ -6,7 +6,7 @@ use Illuminate\Http\JsonResponse;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * RFC 7807 problem+json response. The schema matches the Problem component
+ * RFC 9457 problem+json response. The schema matches the Problem component
  * in openapi/spec.yaml.
  */
 class ProblemResponse extends JsonResponse

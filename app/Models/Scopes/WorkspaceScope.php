@@ -35,8 +35,11 @@ class WorkspaceScope implements Scope
         // Prefer the request-attached workspace; fall back to the user's current.
         if (function_exists('request') && request() !== null) {
             $w = request()->attributes->get('workspace');
-            if ($w !== null && is_object($w) && property_exists($w, 'id')) {
-                return $w->id;
+            // Eloquent models expose the key via getKey(), not a declared `id`
+            // property — property_exists() would return false here, which is
+            // what silently disabled this scope on every API request.
+            if ($w instanceof Model) {
+                return $w->getKey();
             }
             if (is_string($w)) {
                 return $w;

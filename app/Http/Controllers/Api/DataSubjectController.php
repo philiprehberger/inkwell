@@ -87,7 +87,9 @@ class DataSubjectController extends Controller
 
     public function status(Request $request, string $id): JsonResponse
     {
-        $req = DataSubjectRequest::findOrFail($id);
+        // Scoped explicitly, not via the global scope — see SubmissionsController::findScoped.
+        $req = DataSubjectRequest::where('workspace_id', $this->workspace($request)->id)
+            ->findOrFail($id);
         return response()->json($this->serialize($req));
     }
 

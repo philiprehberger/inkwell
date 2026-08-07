@@ -51,7 +51,13 @@ class ApiKeyAuth
         $request->attributes->set('api_key', $apiKey);
         $request->attributes->set('workspace', $workspace);
 
-        $apiKey->forceFill(['last_used_at' => now()])->saveQuietly();
+        // Throttled to once a minute. This used to write on every authenticated
+        // request, putting a DB write on the hot path of every read endpoint.
+        // The value is used for key-hygiene reporting, where minute granularity
+        // is ample.
+        if ($apiKey->last_used_at === null || $apiKey->last_used_at->lt(now()->subMinute())) {
+            $apiKey->forceFill(['last_used_at' => now()])->saveQuietly();
+        }
 
         return $next($request);
     }

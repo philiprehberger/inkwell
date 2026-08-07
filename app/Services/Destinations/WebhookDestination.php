@@ -151,7 +151,24 @@ final class WebhookDestination implements Destination
 
         try {
             $start = microtime(true);
-            $response = Http::withHeaders($headers)->timeout(self::TIMEOUT_SECONDS)->withBody($body, 'application/json')->post($url);
+            // Redirects are refused, not followed. SsrfGuard validates the URL
+            // it is handed; Guzzle's default would then follow a 302 to an
+            // address the guard never saw, and the 4 KB response snippet below
+            // is readable by the tenant — an SSRF read primitive. A webhook
+            // receiver has no legitimate reason to redirect a delivery.
+            $response = Http::withOptions(['allow_redirects' => false])
+                ->withHeaders($headers)
+                ->timeout(self::TIMEOUT_SECONDS)
+                ->withBody($body, 'application/json')
+                ->post($url);
+
+            if ($response->redirect()) {
+                return AttemptResult::failed(
+                    "POST {$url} answered {$response->status()} — redirects are not followed",
+                    'redirect_refused',
+                    $response->status(),
+                );
+            }
             $latency = (int) ((microtime(true) - $start) * 1000);
             $snippet = substr((string) $response->body(), 0, 4096);
             if ($response->successful()) {

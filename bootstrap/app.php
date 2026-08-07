@@ -22,11 +22,19 @@ return Application::configure(basePath: dirname(__DIR__))
             'idempotency' => \App\Http\Middleware\IdempotencyKey::class,
         ]);
 
-        // Trust EC2's own NAT + Cloudflare's published ranges for X-Forwarded-For
-        // so per-IP rate limit reads the real client IP, not the proxy IP.
-        // Cloudflare ranges are refreshed via the `inkwell:refresh-trusted-proxies`
-        // command (Phase 6 wiring).
-        $middleware->trustProxies(at: '*');
+        // Trust only the loopback Apache in front of php-fpm.
+        //
+        // This previously read `at: '*'`, with a comment claiming Cloudflare
+        // ranges refreshed by a command that was never written. Nothing fronts
+        // this host: PHP is served through mod_proxy_fcgi, mod_remoteip is not
+        // enabled, and no RemoteIPHeader is configured — so REMOTE_ADDR is
+        // already the true client address. Trusting every proxy meant Laravel
+        // preferred a client-supplied X-Forwarded-For over it, which made the
+        // per-IP ingest rate limit, IpReputationSignal and SubmissionRateSignal
+        // all bypassable with one header on the unauthenticated endpoint.
+        //
+        // If a CDN is introduced, add its ranges here at cutover.
+        $middleware->trustProxies(at: ['127.0.0.1', '::1']);
 
         // Plan 5.6 — accept and echo W3C trace context on every request, so a
         // submission joins the caller's trace rather than starting its own.

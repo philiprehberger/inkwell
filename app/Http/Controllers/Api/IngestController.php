@@ -21,15 +21,23 @@ use Illuminate\Support\Facades\RateLimiter;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * The submission endpoint. **Unauthenticated by design.** Defence layers:
+ * The submission endpoint. **Unauthenticated by design.** Defence layers, as
+ * actually implemented below — this list previously named two that were not:
  *   1. Form lookup + 410 if archived.
- *   2. Body size cap (100 KB) at the Apache layer; Laravel enforces 100 KB JSON.
- *   3. CORS allowlist check.
- *   4. IP blocklist (Phase 6 wiring).
- *   5. Per-IP token bucket rate limit (60/min/IP/form default).
- *   6. JSON Schema validation (rejects 400 with field-level errors).
- *   7. SpamScorer pipeline (Phase 3) — graduated decision.
- *   8. Redis dedup (atomic SETNX, 60s window).
+ *   2. CORS / Origin allowlist check (browser posts only; absent Origin is not
+ *      a security boundary server-side).
+ *   3. Per-IP token bucket rate limit (60/min/IP/form default), keyed on the
+ *      real client IP now that only the loopback proxy is trusted.
+ *   4. JSON Schema validation (rejects 400 with field-level errors).
+ *   5. SpamScorer pipeline — graduated decision.
+ *   6. Redis dedup (atomic SETNX, 60s window).
+ *   7. Redirect target validated against the form owner's own URLs.
+ *
+ * Request size is capped by Apache's `LimitRequestBody`, currently 25 MB on this
+ * vhost — not the 100 KB an earlier version of this comment claimed, and not
+ * enforced in PHP at all. Lower it at the vhost if a tighter bound is wanted.
+ * There is no IP blocklist; the earlier comment described one as "Phase 6
+ * wiring" and none was built.
  *
  * Response shape depends on Accept header:
  *   - `application/json` → JSON body with `id`, `state`, optional `redirect_url`.
@@ -72,7 +80,7 @@ class IngestController extends Controller
         // Split visitor payload from Inkwell control fields.
         $raw = $request->all();
         $userPayload = array_diff_key($raw, array_flip(self::INKWELL_PRIVATE_KEYS));
-        $redirectUrl = $raw['_redirect'] ?? $form->success_redirect_url ?? null;
+        $redirectUrl = $this->resolveRedirect($form, $raw['_redirect'] ?? null);
 
         // SpamScorer pipeline — composable signals, see config/inkwell.php.
         $scoreCtx = new SubmissionContext(
@@ -161,6 +169,54 @@ class IngestController extends Controller
 
         $target = $redirectUrl ?: route('v1.hosted-thank-you', ['id' => $finalId]);
         return new RedirectResponse($target, 302, $headers);
+    }
+
+    /**
+     * Resolve the post-submit redirect target.
+     *
+     * `_redirect` is submitter-controlled on an unauthenticated endpoint, so it
+     * is honoured only when the form owner has already vouched for the target:
+     * either it matches the configured `success_redirect_url`, or its origin is
+     * in the form's `cors_origins` allowlist. Anything else falls back to the
+     * owner's own URL.
+     *
+     * Unvalidated, this was an open redirect from the brand domain — a phishing
+     * primitive needing no authentication and any public form ID — and the
+     * value was reflected into the JSON response too, so `javascript:` URLs
+     * came back to the caller as well.
+     */
+    private function resolveRedirect(Form $form, mixed $requested): ?string
+    {
+        $configured = $form->success_redirect_url ?: null;
+
+        if (! is_string($requested) || $requested === '') {
+            return $configured;
+        }
+
+        if ($configured !== null && $requested === $configured) {
+            return $requested;
+        }
+
+        $scheme = strtolower((string) parse_url($requested, PHP_URL_SCHEME));
+        if (! in_array($scheme, ['http', 'https'], true)) {
+            return $configured;
+        }
+
+        $host = parse_url($requested, PHP_URL_HOST);
+        $port = parse_url($requested, PHP_URL_PORT);
+        if (! is_string($host) || $host === '') {
+            return $configured;
+        }
+
+        $origin = $scheme.'://'.strtolower($host).($port ? ':'.$port : '');
+
+        foreach ($form->cors_origins ?? [] as $allowed) {
+            if (strtolower(rtrim((string) $allowed, '/')) === $origin) {
+                return $requested;
+            }
+        }
+
+        return $configured;
     }
 
     private function wantsJson(Request $request): bool
